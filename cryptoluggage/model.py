@@ -45,13 +45,16 @@ class Secret:
 class Node:
     """Node in the encrypted file system
     """
+
     def __init__(self, name, parent):
         self.name = name
         self.parent = parent
 
+
 class Dir(Node):
     """Directory (folder) node
     """
+
     def __init__(self, name, parent=None, children=None):
         super().__init__(name=name, parent=parent)
         self.children = [] if children is None else list(children)
@@ -63,6 +66,7 @@ class Dir(Node):
 class File(Node):
     """Encrypted file
     """
+
     def __init__(self, name, parent=None, token_id=None):
         super().__init__(name=name, parent=parent)
         self.token_id = token_id

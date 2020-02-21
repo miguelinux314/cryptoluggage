@@ -1,6 +1,7 @@
 from . import luggage
 from .luggage import Luggage
 from .luggage import LuggageParams
+from .luggage import LuggageInUseError
 from . import model
 from .model import Secret
 from .model import Node

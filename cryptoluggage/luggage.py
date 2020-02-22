@@ -7,28 +7,22 @@ cryptoluggage for python 3
 __author__ = "Miguel Hernández Cabronero <miguel.hernandez@uab.cat>"
 __date__ = "08/02/2020"
 
-import sys
 import os
-import argparse
 import base64
 import sqlite3
 import pickle
-import cryptography
-import cryptography.fernet
 import time
 import struct
 import filelock
-#
-import six
+import sortedcontainers
+# Cryptography specific imports
+import cryptography.fernet
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
-from cryptography.fernet import InvalidToken
-#
-import sortedcontainers
 
 from . import model
 
@@ -71,13 +65,9 @@ class LuggageFernet(cryptography.fernet.Fernet):
         if not isinstance(token, bytes):
             raise TypeError("token must be bytes.")
 
-        # No Base64 decryption
-        # try:
-        #     data = base64.urlsafe_b64decode(token)
-        # except (TypeError, binascii.Error):
-        #     raise InvalidToken
+        # (No base64 decryption)
         data = token
-        if not data or six.indexbytes(data, 0) != 0x80:
+        if not data or data[0] != 0x80:
             raise BadPasswordOrCorrupted()
 
         h = HMAC(self._signing_key, hashes.SHA256(), backend=self._backend)
@@ -116,12 +106,6 @@ class LuggageFernet(cryptography.fernet.Fernet):
             iterations=luggage_params.master_key_iterations,
             backend=default_backend())
         return base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
-
-    @classmethod
-    def empty_fernet(cls):
-        params = LuggageParams(master_key_salt=bytes(0), master_key_iterations=1)
-        empty_key = cls.key_from_password(password="", luggage_params=params)
-        return cls(empty_key)
 
     def _encrypt_from_parts_no_base64(self, data, current_time, iv):
         """Copy-and-paste from from fernet.Fernet, save for the return
@@ -260,13 +244,14 @@ class Luggage:
                     os.remove(self.lock_path)
                 except Exception as ex:
                     pass
-                
+
             raise LuggageInUseError(
                 f"The Luggage {self.luggage_path} seems to be already opened elsewhere.\n"
                 f"If you are sure this is not the case, remove {self.lock_path} "
                 "and try again") from ex
 
     def close(self):
+        self.db_conn, self.master_fernet = None, None
         try:
             os.remove(self.lock_path)
         except FileNotFoundError:
@@ -327,11 +312,9 @@ class Luggage:
         c.execute(r"CREATE UNIQUE INDEX index_token_store ON token_store (id)")
 
         # Parameters are public - no password
-        empty_fernet = LuggageFernet.empty_fernet()
         luggage_params = LuggageParams()
-        params_token = empty_fernet.encrypt_binary(pickle.dumps(luggage_params))
         c.execute(r"INSERT INTO token_store (id, token) VALUES (?, ?)",
-                  (cls.params_id, params_token))
+                  (cls.params_id, pickle.dumps(luggage_params)))
 
         # root and secrets are encrypted
         master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
@@ -360,10 +343,9 @@ class Luggage:
         c = conn.cursor()
 
         # Load public params
-        empty_fernet = LuggageFernet.empty_fernet()
-        for params_id_token, in c.execute(r"SELECT token FROM token_store"
-                                          f" WHERE id={self.params_id:d}"):
-            self.params = pickle.loads(empty_fernet.decrypt_binary(params_id_token))
+        for params_dumps, in c.execute(r"SELECT token FROM token_store"
+                                       f" WHERE id={self.params_id:d}"):
+            self.params = pickle.loads(params_dumps)
             break
         else:
             raise ValueError(f"Could not find parameter entry id {self.params_id}")
@@ -372,10 +354,3 @@ class Luggage:
         master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
             password=password, luggage_params=self.params))
         return conn, master_fernet
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CryptoLuggage CLI")
-    parser.add_argument("-v", "--verbose", help="Be verbose? Repeat for more", action="count", default=0)
-    parser.add_argument("luggage", help="Path to the luggage to be used")
-    options = parser.parse_known_args()[0]

@@ -5,6 +5,7 @@ Data model
 """
 
 import datetime
+import sortedcontainers
 
 ############################ Begin configurable part
 
@@ -54,13 +55,32 @@ class Node:
 class Dir(Node):
     """Directory (folder) node
     """
+    def get_descendent_files(self):
+        """Generator of all model.File instances contained in this directory,
+        or any of its descendent subdirs.
+        """
+        pending_nodes = [self]
+        seen_nodes = set()
+        while pending_nodes:
+            node = pending_nodes.pop()
+            try:
+                for child in node.children.values():
+                    if child in seen_nodes:
+                        raise RuntimeError("Circular refernce")
+                    pending_nodes.append(child)
+                    seen_nodes.add(child)
+            except AttributeError:
+                yield node
 
     def __init__(self, name, parent=None, children=None):
         super().__init__(name=name, parent=parent)
-        self.children = [] if children is None else list(children)
+        self.children = sortedcontainers.SortedDict() if children is None \
+            else sortedcontainers.SortedDict({c.name: c for c in children})
 
     def __repr__(self):
-        return f"Dir(name={repr(self.name)}, parent={repr(self.parent)}, children={repr(self.children)})"
+        return f"Dir(name={repr(self.name)}, " \
+               f"parent={repr(self.parent.name) if self.parent is not None else None}, " \
+               f"children={repr(','.join(c.name for c in self.children.values()))})"
 
 
 class File(Node):
@@ -72,4 +92,4 @@ class File(Node):
         self.token_id = token_id
 
     def __repr__(self):
-        return f"File(name={repr(self.name)}, parent={repr(self.parent)}, token_id={self.token_id})"
+        return f"File(name={repr(self.name)}, parent={repr(self.parent.name)}, token_id={self.token_id})"

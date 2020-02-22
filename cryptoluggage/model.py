@@ -4,6 +4,7 @@
 Data model
 """
 
+import os
 import datetime
 import sortedcontainers
 
@@ -50,6 +51,15 @@ class Node:
     def __init__(self, name, parent):
         self.name = name
         self.parent = parent
+
+    @property
+    def path(self):
+        elements = [self.name]
+        s = self
+        while s.parent is not None:
+            elements.append(s.parent.name if s.parent.parent is not None else '')
+            s = s.parent
+        return os.sep.join(reversed(elements))
 
 
 class Dir(Node):

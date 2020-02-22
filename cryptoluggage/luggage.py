@@ -376,6 +376,18 @@ class EncryptedFS(model.Dir):
         self._replace_root_dumps(cursor)
         self.luggage.db_conn.commit()
 
+    def __contains__(self, virtual_path):
+        """
+        :return: True if and only if virtual_path points to an existing element
+        in the encrypted filesystem
+        """
+        parent_names, name = self.split_path(virtual_path)
+        try:
+            target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
+            return not name or name in target_dir.children
+        except KeyError:
+            return False
+
     def __repr__(self):
         return f"{self.__class__.__name__}({repr(self.root)})"
 

@@ -24,7 +24,9 @@ class TestFS(unittest.TestCase):
         try:
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
                 for path in ("/a/b/c/d.txt", "/a/c/c/d.txt", "/a/d/c/d.txt"):
+                    assert path not in l.encrypted_fs
                     l.encrypted_fs[path] = __file__
+                    assert path in l.encrypted_fs
 
             with Luggage(path=tmp_path, passphrase=self.test_password) as l2:
                 for path in ("/a/b/c/d.txt", "/a/c/c/d.txt", "/a/d/c/d.txt"):
@@ -119,6 +121,25 @@ class TestFS(unittest.TestCase):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def test_path_formation(self):
+        tmp_id, tmp_path = tempfile.mkstemp()
+        try:
+            paths = ["/a.txt", "a/b.txt", "a/c/d.txt"]
+            with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
+                for p in paths:
+                    l.encrypted_fs[p] = __file__
+
+            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
+                generated_paths = [f.path for f in l.encrypted_fs.root.get_descendent_files()]
+                generated_paths = [p[1:] if p.startswith("/") else p for p in generated_paths]
+                paths = [p[1:] if p.startswith("/") else p for p in paths]
+                assert set(generated_paths) == set(paths), (set(generated_paths), set(paths))
+                    
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
 
 
 if __name__ == '__main__':

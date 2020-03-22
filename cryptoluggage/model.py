@@ -65,6 +65,12 @@ class Node:
 class Dir(Node):
     """Directory (folder) node
     """
+    def __init__(self, name, parent=None, children=None):
+        super().__init__(name=name, parent=parent)
+        self.children = sortedcontainers.SortedDict() if children is None \
+            else sortedcontainers.SortedDict({c.name: c for c in children})
+        print(f">>>>> Creating dir name={name} self.children={self.children}")
+
     def get_descendent_files(self):
         """Generator of all model.File instances contained in this directory,
         or any of its descendent subdirs.
@@ -82,10 +88,10 @@ class Dir(Node):
             except AttributeError:
                 yield node
 
-    def __init__(self, name, parent=None, children=None):
-        super().__init__(name=name, parent=parent)
-        self.children = sortedcontainers.SortedDict() if children is None \
-            else sortedcontainers.SortedDict({c.name: c for c in children})
+    def __iter__(self):
+        """Iterate over children of this dir
+        """
+        return iter(self.children.values())
 
     def __repr__(self):
         return f"Dir(name={repr(self.name)}, " \

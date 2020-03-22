@@ -20,6 +20,8 @@ class TestFS(unittest.TestCase):
         string.printable, k=random.randint(0, 10240)))
 
     def test_file_path_insertion(self):
+        """Test file insertions from paths
+        """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
@@ -39,6 +41,8 @@ class TestFS(unittest.TestCase):
                 os.remove(tmp_path)
 
     def test_open_file_insertion(self):
+        """Test file insertion from open files
+        """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
             l = Luggage.create_new(path=tmp_path, passphrase=self.test_password)
@@ -56,6 +60,8 @@ class TestFS(unittest.TestCase):
                 os.remove(tmp_path)
 
     def test_subdir_operations(self):
+        """Test subdirs provide similar functionality as the root
+        """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
@@ -64,7 +70,16 @@ class TestFS(unittest.TestCase):
             with Luggage(path=tmp_path, passphrase=self.test_password) as l2:
                 with open(__file__, "rb") as f:
                     a = l2.encrypted_fs["/a"]
+                    assert "b" in a
+                    assert "b/c.txt" in a
                     assert a["/b/c.txt"] == f.read()
+                    del a["/b"]
+
+            with Luggage(path=tmp_path, passphrase=self.test_password) as l3:
+                a = l3.encrypted_fs["a"]
+                assert "b" not in a
+                assert "b/c.txt" not in a
+
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -117,7 +132,6 @@ class TestFS(unittest.TestCase):
                     except KeyError:
                         pass
 
-
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -135,11 +149,29 @@ class TestFS(unittest.TestCase):
                 generated_paths = [p[1:] if p.startswith("/") else p for p in generated_paths]
                 paths = [p[1:] if p.startswith("/") else p for p in paths]
                 assert set(generated_paths) == set(paths), (set(generated_paths), set(paths))
-                    
+
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+
+    def test_iteration(self):
+        tmp_id, tmp_path = tempfile.mkstemp()
+        try:
+            paths = ["/a/a.txt", "a/b.txt", "a/c.txt", "a/d.txt", "a/e.txt"]
+            with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
+                for p in paths:
+                    l.encrypted_fs[p] = __file__
+
+            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
+                found_paths = []
+                for p in l.encrypted_fs["a"]:
+                    found_paths.append(p.name)
+            assert sorted(found_paths) == sorted(os.path.basename(p) for p in paths)
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 
 if __name__ == '__main__':

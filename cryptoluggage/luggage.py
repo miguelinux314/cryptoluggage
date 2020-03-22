@@ -219,6 +219,8 @@ class EncryptedFS(model.Dir):
             else:
                 raise BadPasswordOrCorrupted(f"Could not find parameter entry id{self.secrets_id}.")
         else:
+            print("[watch] root = {}".format(root))
+            
             self.root = root
 
     @property
@@ -387,6 +389,9 @@ class EncryptedFS(model.Dir):
             return not name or name in target_dir.children
         except KeyError:
             return False
+
+    def __iter__(self):
+        return self.root.__iter__()
 
     def __repr__(self):
         return f"{self.__class__.__name__}({repr(self.root)})"

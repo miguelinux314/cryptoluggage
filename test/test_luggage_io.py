@@ -28,16 +28,7 @@ class TestCreation(unittest.TestCase):
             tmp_id, tmp_path = tempfile.mkstemp()
 
             try:
-                l1 = Luggage.create_new(path=tmp_path,
-                                        passphrase=password)
-                # Check concurrency control
-                try:
-                    Luggage(tmp_path, passphrase=password)
-                    raise Exception(f"The luggage at {tmp_path} should not have been opened "
-                                    f"(concurrency)")
-                except cryptoluggage.LuggageInUseError:
-                    pass
-
+                l1 = Luggage.create_new(path=tmp_path, passphrase=password)
                 # Check bad password control
                 l1.close()
                 assert not os.path.exists(l1.lock_path)
@@ -64,24 +55,23 @@ class TestCreation(unittest.TestCase):
                 os.remove(tmp_path)
 
     def test_concurrency_control(self):
-        pass
-        # raise NotImplementedError()
+        for password_length in [0, 1, 32, 1024]:
+            password = ''.join(random.choices(string.printable, k=password_length))
 
-        # cl = Luggage(luggage_path=tmp_luggage.name, password="meh")
-        # #
-        # print("[watch] cl.secrets = {}".format(cl.secrets))
-        # cl.secrets["miguel"] = "cool"
-        # print("[watch] cl.secrets = {}".format(cl.secrets))
-        # cl.secrets["miguel2"] = "cool2"
-        # print("[watch] cl.secrets = {}".format(cl.secrets))
+            tmp_id, tmp_path = tempfile.mkstemp()
 
-        # cl.add_secret(s)
-
-        # cl.create_new_db()
-
-        # Luggage.create_new(target_path=options.luggage, master_password="meh")
-        # secret = model.Secret()
-        # f = model.Node(name="empty", parent=None)
+            try:
+                l1 = Luggage.create_new(path=tmp_path,
+                                        passphrase=password)
+                # Check concurrency control
+                try:
+                    Luggage(tmp_path, passphrase=password)
+                    raise Exception(f"The luggage at {tmp_path} should not have been opened "
+                                    f"(concurrency)")
+                except cryptoluggage.LuggageInUseError:
+                    pass
+            finally:
+                os.remove(tmp_path)
 
 
 if __name__ == '__main__':

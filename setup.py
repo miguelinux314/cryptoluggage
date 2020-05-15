@@ -1,4 +1,5 @@
-"""Setup script for cryptoluggage"""
+"""Setup script for cryptoluggage
+"""
 
 import os.path
 from setuptools import setup
@@ -27,6 +28,7 @@ setup(
         "Operating System :: OS Independent",
     ],
     packages=["cryptoluggage"],
+    # package_data={"cryptoluggage": ["gui/*"]},
     include_package_data=True,
     python_requires='>=3.6',
     install_requires=[

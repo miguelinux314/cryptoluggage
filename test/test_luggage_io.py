@@ -9,7 +9,7 @@ import unittest
 import tempfile
 import string
 import random
-import cryptography
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -42,9 +42,10 @@ class TestCreation(unittest.TestCase):
                 try:
                     with Luggage(tmp_path, passphrase=bad_password) as l:
                         l.secrets
-                    assert not os.path.exists(l1.lock_path)
+                        l.close()
+                    assert not os.path.exists(l.lock_path)
                     raise Exception(f"Luggage was opened with a bad password?? (equal={password == bad_password})")
-                except cryptoluggage.luggage.BadPasswordOrCorrupted:
+                except cryptoluggage.luggage.BadPasswordOrCorruptedException:
                     pass
 
                 assert not os.path.exists(l1.lock_path)

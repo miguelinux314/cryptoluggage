@@ -32,7 +32,7 @@ setup(
     include_package_data=True,
     python_requires='>=3.6',
     install_requires=[
-        "cryptography", "filelock", "sortedcontainers",
+        "cryptography", "filelock", "sortedcontainers", "prompt_toolkit"
     ],
     entry_points={"console_scripts": ["cl=cryptoluggage.__main__:main"]},
 )

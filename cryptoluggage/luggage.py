@@ -28,25 +28,31 @@ from cryptography.hazmat.primitives.hmac import HMAC
 from . import model
 
 
-class RepeatedNameError(BaseException):
+class RepeatedNameError(Exception):
     """Raised when a repeated name is repeated, and that is not allowed.
     """
     pass
 
 
-class LuggageInUseError(BaseException):
+class BadPathException(Exception):
+    """Rasied when a path is not correct.
+    """
+    pass
+
+
+class LuggageInUseError(Exception):
     """A luggage is being accessed, but it is already being
     open by another instance.
     """
     pass
 
 
-class LuggageClosedError(BaseException):
+class LuggageClosedError(Exception):
     """A luggage was used after being closed
     """
 
 
-class BadPasswordOrCorrupted(BaseException):
+class BadPasswordOrCorruptedException(Exception):
     """Attempted opening a luggage with the wrong password, or the file is
     corrupted.
     """
@@ -74,7 +80,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         # (No base64 decryption)
         data = token
         if not data or data[0] != 0x80:
-            raise BadPasswordOrCorrupted()
+            raise BadPasswordOrCorruptedException()
 
         h = HMAC(self._signing_key, hashes.SHA256(), backend=self._backend)
 
@@ -82,7 +88,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         try:
             h.verify(data[-32:])
         except InvalidSignature:
-            raise BadPasswordOrCorrupted()
+            raise BadPasswordOrCorruptedException()
 
         iv = data[9:25]
         ciphertext = data[25:-32]
@@ -93,14 +99,14 @@ class LuggageFernet(cryptography.fernet.Fernet):
         try:
             plaintext_padded += decryptor.finalize()
         except ValueError:
-            raise BadPasswordOrCorrupted()
+            raise BadPasswordOrCorruptedException()
         unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
 
         unpadded = unpadder.update(plaintext_padded)
         try:
             unpadded += unpadder.finalize()
         except ValueError:
-            raise BadPasswordOrCorrupted()
+            raise BadPasswordOrCorruptedException()
         return unpadded
 
     @classmethod
@@ -217,15 +223,217 @@ class EncryptedFS(model.Dir):
                 self.root = pickle.loads(self.luggage.master_fernet.decrypt_binary(root_node_token))
                 break
             else:
-                raise BadPasswordOrCorrupted(f"Could not find parameter entry id{self.secrets_id}.")
+                raise BadPasswordOrCorruptedException(f"Could not find parameter entry id{self.secrets_id}.")
         else:
-            print("[watch] root = {}".format(root))
-            
             self.root = root
 
     @property
     def children(self):
-        self.root.children
+        return self.root.children
+
+    @property
+    def name(self):
+        return self.root.name
+
+    @property
+    def parent(self):
+        return self.root.parent
+
+    def insert_disk_file(self, virtual_path, file_or_path, cursor=None):
+        """Insert a file given its path or an open file with its contents.
+
+        :param virtual_path: a str-like object that points to a file in the Luggage's
+          virtual (encrypted) filesystem. Example paths are:
+                /a.txt
+                a.txt
+          A file named a.txt at the luggage's root.
+                /a/b/c.bin
+                a/b/c.bin
+          file named c.bin under b; b is a subdir of a;
+          a is a subdir of the luggage's root.
+        :param value: a str-like object with the input file's path, or an open file-like
+            object that can be read()
+        :param cursor: if None, a cursor is created from the current connection
+          to the db, and changes are commited after insertion. If not None,
+          this cursor is used and changes are NOT commited.
+        """
+        # Process target path
+        virtual_parent_names, virtual_file_name = self.split_path(virtual_path)
+        try:
+            virtual_file_name = virtual_file_name if virtual_file_name else os.path.basename(file_or_path)
+            if not virtual_file_name:
+                raise BadPathException("Cannot determine input file name")
+        except TypeError as ex:
+            raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+
+        try:
+            target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=True)
+        except BadPathException as ex:
+            raise BadPathException(f"Cannot insert contents inside a non-directory ({file_or_path} -> {virtual_path})")
+
+        if virtual_file_name in target_dir.children:
+            target_dir = target_dir.children[virtual_file_name]
+            try:
+                virtual_file_name = os.path.basename(file_or_path)
+                if not virtual_file_name:
+                    raise BadPathException("Cannot determine input file name")
+            except TypeError:
+                raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+            try:
+                if virtual_file_name in target_dir.children:
+                    try:
+                        target_dir.children[virtual_file_name].children
+                        raise BadPathException(
+                            f"Cannot overwrite existing dir {target_dir.children[virtual_file_name].path} with a file {file_or_path}")
+                    except AttributeError:
+                        pass
+            except AttributeError:
+                target_dir = target_dir.parent
+
+        # Get file contents
+        try:
+            with open(file_or_path, "rb") as f:
+                contents = f.read()
+        except (TypeError, FileNotFoundError):
+            try:
+                contents = file_or_path.read()
+            except AttributeError:
+                raise ValueError(f"right value of type {type(file_or_path)} not valid")
+        assert contents is not None
+
+        # Delete previous file if existing
+        try:
+            previous_file = target_dir.children[virtual_file_name]
+            del self[previous_file.path]
+        except KeyError:
+            pass
+
+        # Store new token
+        file_cursor = self.luggage.db_conn.cursor() if cursor is None else cursor
+        file_cursor.execute(r"INSERT INTO token_store (token) VALUES (?)",
+                            (self.luggage.master_fernet.encrypt_binary(data=contents),))
+        new_file = model.File(name=virtual_file_name, parent=target_dir, token_id=file_cursor.lastrowid)
+        target_dir.children[new_file.name] = new_file
+        self._replace_root_dumps(cursor=file_cursor)
+
+        # Commit only if a cursor was not passed as argument
+        if cursor is None:
+            self.luggage.db_conn.commit()
+
+    def insert_disk_dir(self, virtual_path, dir_path):
+        """Recursively insert a directory into the luggage.
+        """
+        dir_path = os.path.abspath(dir_path)
+
+        cursor = self.luggage.db_conn.cursor()
+        for dirpath, _, filenames in os.walk(dir_path):
+            dirpath = os.path.abspath(dirpath)
+            target_dir_path = os.path.join(
+                os.sep, virtual_path,
+                dirpath.replace(os.path.dirname(os.path.abspath(dir_path)) + os.sep, ""))
+
+            for file_name in filenames:
+                target_file_path = os.path.join(target_dir_path, file_name)
+                self.insert_disk_file(
+                    virtual_path=target_file_path,
+                    file_or_path=os.path.join(dirpath, file_name))
+            if not filenames:
+                # Make sure that dirs without files are also created
+                _ = self.dir_from_path(virtual_path=target_dir_path, create=True)
+        self._replace_root_dumps(cursor=cursor)
+        self.luggage.db_conn.commit()
+
+    def export(self, virtual_path, output_path):
+        output_path = os.path.realpath(os.path.expanduser(output_path))
+        while virtual_path and virtual_path[0] == os.sep:
+            virtual_path = virtual_path[1:]
+        print(f"Exporting {virtual_path} into {output_path}...")
+        try:
+            contents = self[virtual_path]
+            if hasattr(contents, "children"):
+                # Export a dir
+                if os.path.isfile(output_path):
+                    raise ValueError(f"Cannot export directory {virtual_path} to existing file {output_path}")
+                else:
+                    output_path = os.path.join(output_path, os.path.basename(virtual_path))
+                    os.makedirs(output_path, exist_ok=True)
+
+                os.makedirs(output_path, exist_ok=True)
+                remaining_elements = list(contents.children.values())
+                while remaining_elements:
+                    current_element = remaining_elements.pop()
+                    current_path = current_element.path.replace(virtual_path, "")
+                    while current_path and current_path[0] == os.sep:
+                        current_path = current_path[1:]
+                    try:
+                        for child in current_element.children.values():
+                            remaining_elements.append(child)
+                        target = os.path.join(output_path, current_path)
+                        os.makedirs(target, exist_ok=True)
+                    except AttributeError:
+                        target = os.path.join(output_path, current_path)
+                        os.makedirs(os.path.dirname(target), exist_ok=True)
+                        with open(target, "wb") as output_file:
+                            output_file.write(self[current_element.path])
+            else:
+                # Export a file
+                if not os.path.exists(output_path) or os.path.isfile(output_path):
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    with open(output_path, "wb") as output_file:
+                        output_file.write(contents)
+                elif os.path.isdir(output_path):
+                    with open(os.path.join(output_path, os.path.basename(virtual_path)), "wb") as output_file:
+                        output_file.write(contents)
+                else:
+                    raise RuntimeError(f"Unexpected situation {virtual_path} -> {output_path}")
+
+        except KeyError:
+            raise BadPathException(f"Virtual path {virtual_path} does not exist.")
+
+    def move(self, source_path, target_path):
+        """Move source into target, creating target's parents recursively if necessary.
+        """
+        source_parents, source_name = self.split_path(source_path)
+        if not source_parents and not source_name:
+            raise BadPathException("Cannot rename the root")
+        try:
+            source_dir = self.dir_from_parents(parent_names=source_parents, create=False)
+            source_node = source_dir.children[source_name]
+        except KeyError as ex:
+            raise BadPathException(f"Source path {source_path} does not exist") from ex
+
+        target_parents, target_name = self.split_path(target_path)
+        target_dir = self.dir_from_parents(parent_names=target_parents, create=True)
+
+        # target_name = target_name if target_name else source_name
+        # TODO: add conditions when already exists
+        try:
+            existing_target_node = target_dir.children[target_name if target_name else source_name]
+
+            try:
+                existing_target_node.children
+                target_dir = existing_target_node
+            except AttributeError:
+                try:
+                    source_node.children
+                    raise BadPathException(
+                        f"Cannot move a directory ({source_path}) into an existing file ({target_path})")
+                except AttributeError:
+                    pass
+        except KeyError:
+            pass
+        target_name = target_name if target_name else source_name
+
+        source_node.name = target_name
+        target_dir.children[target_name] = source_node
+        del source_node.parent.children[source_name]
+        source_node.parent = target_dir
+
+        if source_parents == target_parents and source_name == target_name:
+            raise BadPathException(f"Cannot move {source_path} into itself")
+
+        print("TODO: dump results")
+        print("Truly remove overwritten files")
 
     def dumps(self):
         """Return a pickled string that represents the root node of this encrypted
@@ -247,9 +455,32 @@ class EncryptedFS(model.Dir):
         while parents and os.path.normpath(parents) != "/":
             parents, parent_name = os.path.split(os.path.normpath(parents))
             parent_names.append(parent_name)
+        if not file_name and parent_names:
+            file_name = parent_names[0]
+            parent_names = parent_names[1:]
+
         return list(reversed(parent_names)), file_name
 
+    def dir_from_path(self, virtual_path, create=True):
+        """Get a directory corresponding to virtual_path. Note that the last
+        element of virtual_path is assumed to be the name of the deepest
+        directory.
+
+        :param create: if True, parent directories are created as needed. Otherwise,
+          a KeyError is raised.
+        """
+        parent_names, file_name = self.split_path(virtual_path=virtual_path)
+        parent_names.append(file_name)
+        return self.dir_from_parents(parent_names=parent_names, create=create)
+
     def dir_from_parents(self, parent_names, create=True):
+        """Return the model.Dir instance pointed by a list of parent names,
+        i.e., its path.
+
+        :param create: if True, parent dirs are created as necessary.
+          Otherwise, if any element before the last one does not exist
+          in the luggage, a KeyError exception in raised.
+        """
         target_dir = self.root
         for name in parent_names:
             try:
@@ -262,24 +493,35 @@ class EncryptedFS(model.Dir):
                     target_dir = new_dir
                 else:
                     raise ex
+            if not hasattr(target_dir, "children"):
+                raise BadPathException(f"{target_dir} is not a directory")
         return target_dir
 
-    def print_hierarchy(self):
+    def print_hierarchy(self, filter=None):
         """Print the filesystem hierarchy
         """
-        print()
-        self._print_node(node=self.root, level=0)
+        self._print_node(node=self.root, level=0, filter=filter)
 
-    def _print_node(self, node, level):
+    def _print_node(self, node, level, filter=None):
         s = " " * (3 * (level - 1)) + (" +-" if level > 0 else "")
+
+        relevant_subfolder = hasattr(node, "children") and \
+                             (filter is None or any(filter in d.name for d in node.get_all_descendents()))
+
         if node is not self.root or self.luggage.encrypted_fs.root is not self.root:
-            print(s + f"[{node.name}]")
+            if filter is None or filter in node.name or relevant_subfolder:
+                if hasattr(node, "children"):
+                    lbracket, rbracket = "[", "]"
+                else:
+                    lbracket, rbracket = "--", " "
+                print(s + f"{lbracket}{node.name}{rbracket}")
         else:
             print(f"[{self.luggage.path}]")
         try:
-            for name, node in node.children.items():
-                print(" " * (3 * (level)) + " |")
-                self._print_node(node=node, level=level + 1)
+            if relevant_subfolder:
+                for name, node in node.children.items():
+                    print(" " * (3 * (level)) + " |")
+                    self._print_node(node=node, level=level + 1, filter=filter)
         except AttributeError:
             pass
 
@@ -313,8 +555,9 @@ class EncryptedFS(model.Dir):
             raise KeyError(virtual_path) from ex
 
     def __setitem__(self, virtual_path, value):
-        """Save a file to the virtual path, creating parent dirs as necessary.
-        Path splitting is based on os.path. Paths may optionally include a leading os.sep.
+        """Save a file or directory to the virtual path, creating parent dirs as necessary.
+        Virtual path splitting is based on os.path. Virtual paths may optionally include a leading os.sep.
+        If a directory is inserted, its contents are inserted recursively.
 
         :param virtual_path: a str-like object that points to a file in the Luggage's
           virtual (encrypted) filesystem. Example paths are:
@@ -325,39 +568,23 @@ class EncryptedFS(model.Dir):
                 a/b/c.bin
           file named c.bin under b; b is a subdir of a;
           a is a subdir of the luggage's root.
-        :param value: a str-like object with the input file's path, or an open file-like
-            object that can be read()
+        :param value: either:
+          - a str-like object pointing to a directory
+          - a str-like object pointing to a file path
+          - an open file-like object that can be read()
         """
-        # Process target path
-        parent_names, file_name = self.split_path(virtual_path)
-        if not file_name:
-            raise KeyError(f"The virtual path {repr(virtual_path)} does not denote a file"
-                           f" (it should)")
-        target_dir = self.dir_from_parents(parent_names=parent_names)
-
-        # Get file contents
-        try:
-            with open(value, "rb") as f:
-                contents = f.read()
-        except (TypeError, FileNotFoundError):
-            try:
-                contents = value.read()
-            except AttributeError:
-                raise ValueError(f"right value of type {type(value)} not valid")
-        assert contents is not None
-
-        # Store new token
-        cursor = self.luggage.db_conn.cursor()
-        cursor.execute(r"INSERT INTO token_store (token) VALUES (?)",
-                       (self.luggage.master_fernet.encrypt_binary(data=contents),))
-        new_file = model.File(name=file_name, parent=target_dir, token_id=cursor.lastrowid)
-        target_dir.children[new_file.name] = new_file
-        self._replace_root_dumps(cursor=cursor)
-        self.luggage.db_conn.commit()
+        if hasattr(value, "read") or os.path.isfile(value):
+            self.insert_disk_file(virtual_path=virtual_path, file_or_path=value)
+        elif os.path.isdir(value):
+            self.insert_disk_dir(virtual_path=virtual_path, dir_path=value)
+        else:
+            raise ValueError(f"Invalid assignment ({value}). Must be a file/filepath or a dirpath")
 
     def __delitem__(self, key):
         """Delete a file or a dir, recursively in the latter case
         """
+        print(f"[watch] Deleting key {key}")
+        
         parent_names, name = self.split_path(key)
         target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
         if not name:
@@ -407,25 +634,35 @@ class Luggage:
         it does not exist.
         """
         self.path = path
-        if not os.path.exists(self.path):
-            self.create_new(path=self.path,
-                            passphrase=passphrase)
-        self.db_conn, self.master_fernet = self._open(password=passphrase)
-        existed_before = os.path.exists(self.lock_path)
-        self.lock = filelock.FileLock(lock_file=self.lock_path)
         try:
+            if not os.path.exists(self.path):
+                self.create_new(path=self.path,
+                                passphrase=passphrase)
+            self.db_conn, self.master_fernet = self._open(passphrase=passphrase)
+            existed_before = os.path.exists(self.lock_path)
+            self.lock = filelock.FileLock(lock_file=self.lock_path)
             self.lock.acquire(timeout=0.1)
+
+            # Force reading of DB to password check
+            _ = self.secrets
         except filelock.Timeout as ex:
             if not existed_before:
                 try:
                     os.remove(self.lock_path)
-                except Exception as ex:
+                except FileExistsError:
                     pass
 
             raise LuggageInUseError(
                 f"The Luggage {self.path} seems to be already opened elsewhere.\n"
                 f"If you are sure this is not the case, remove {self.lock_path} "
                 "and try again") from ex
+        except Exception as ex:
+            if not existed_before:
+                try:
+                    os.remove(self.lock_path)
+                except FileExistsError:
+                    pass
+            raise ex
 
     @classmethod
     def create_new(cls, path, passphrase: str):
@@ -486,7 +723,7 @@ class Luggage:
     def lock_path(self):
         return self.path + ".lock"
 
-    def _open(self, password):
+    def _open(self, passphrase):
         """Open the database, read the parameters and store the master fernet.
         :return: (conn, fernet), where conn is the database connection and fernet
         is the master fernet to be used to decrypt the database.
@@ -504,16 +741,20 @@ class Luggage:
 
         # Make master fernet
         master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
-            password=password, luggage_params=self.params))
+            password=passphrase, luggage_params=self.params))
         return conn, master_fernet
 
     def close(self):
         self.db_conn, self.master_fernet = None, None
         try:
             os.remove(self.lock_path)
-        except FileNotFoundError:
+        except FileNotFoundError as ex:
             pass
-        self.lock.release(force=True)
+        try:
+            self.lock.release(force=True)
+        except AttributeError:
+            # lock might not have been defined, that's okp
+            pass
 
     def __enter__(self):
         return self
@@ -532,4 +773,4 @@ class Luggage:
         for x, in self.db_conn.cursor().execute("SELECT COUNT(*) from token_store"):
             return x
         else:
-            raise BadPasswordOrCorrupted()
+            raise BadPasswordOrCorruptedException()

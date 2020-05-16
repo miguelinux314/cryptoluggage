@@ -69,7 +69,6 @@ class Dir(Node):
         super().__init__(name=name, parent=parent)
         self.children = sortedcontainers.SortedDict() if children is None \
             else sortedcontainers.SortedDict({c.name: c for c in children})
-        print(f">>>>> Creating dir name={name} self.children={self.children}")
 
     def get_descendent_files(self):
         """Generator of all model.File instances contained in this directory,
@@ -87,6 +86,23 @@ class Dir(Node):
                     seen_nodes.add(child)
             except AttributeError:
                 yield node
+
+    def get_all_descendents(self):
+        """Return a generator of all files and directories contained under this directory
+        """
+        pending_nodes = [self]
+        seen_nodes = set()
+        while pending_nodes:
+            node = pending_nodes.pop()
+            yield node
+            try:
+                for child in node.children.values():
+                    if child in seen_nodes:
+                        raise RuntimeError("Circular refernce")
+                    pending_nodes.append(child)
+                    seen_nodes.add(child)
+            except AttributeError:
+                pass
 
     def __iter__(self):
         """Iterate over children of this dir

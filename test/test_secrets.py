@@ -24,13 +24,14 @@ class TestSecrets(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as tmp_file:
             manual_key, manual_value = "test", "test\ncontents"
 
+            expected_secrets = dict()
             with cryptoluggage.Luggage.create_new(path=tmp_file.name, passphrase=self.test_password) as l1:
                 assert len(l1.secrets) == 0
                 l1.secrets[manual_key] = manual_value
+                expected_secrets[manual_key] = manual_value
                 assert len(l1.secrets) == 1
 
             insertion_lengths = range(1, 2048, 47)
-            expected_secrets = dict()
             with cryptoluggage.Luggage(path=tmp_file.name, passphrase=self.test_password) as l2:
                 assert len(l2.secrets) == 1
                 assert l2.secrets[manual_key] == manual_value
@@ -46,7 +47,7 @@ class TestSecrets(unittest.TestCase):
 
             with cryptoluggage.Luggage(path=tmp_file.name, passphrase=self.test_password) as l3:
                 for k, v in expected_secrets.items():
-                    assert l2.secrets[k] == v
+                    assert l3.secrets[k] == v
                 for k,v in l3.secrets.items():
                     assert expected_secrets[k] == v
 

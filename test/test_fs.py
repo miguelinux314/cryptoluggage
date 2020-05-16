@@ -9,6 +9,7 @@ import unittest
 import random
 import string
 import tempfile
+import filecmp
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -84,6 +85,42 @@ class TestFS(unittest.TestCase):
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+    def test_folder_insertion(self):
+        with open(__file__, "rb") as this_file:
+            this_file_contents = this_file.read()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = os.path.join(tmp_dir, "base_dir")
+            os.makedirs(base_dir)
+            dirs_level_1 = ["A", "B", "C"]
+            dirs_level_2 = ["a", "b"]
+            files_level_2 = ["f1", "f2"]
+            # dirs_level_1 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(10)]
+            # dirs_level_2 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(4)]
+            # files_level_2 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(12)]
+            for dir_level_1 in dirs_level_1:
+                os.makedirs(os.path.join(base_dir, dir_level_1))
+            for dir_level_2 in dirs_level_2:
+                os.makedirs(os.path.join(base_dir, dirs_level_1[0], dir_level_2))
+            for file_name in files_level_2:
+                with open(os.path.join(base_dir, dirs_level_1[0], file_name), "wb") as out_file:
+                    out_file.write(this_file_contents)
+
+            luggage_path = os.path.join(tmp_dir, "luggage.lug")
+            passphrase = "".join(random.choices(string.printable, k=5012))
+            with Luggage.create_new(path=luggage_path, passphrase=passphrase) as l1:
+                l1.encrypted_fs["/base_dir"] = os.path.join(tmp_dir, "base_dir")
+
+            output_path = os.path.join(tmp_dir, "reconstructed")
+            with Luggage(path=luggage_path, passphrase=passphrase) as l2:
+                l2.encrypted_fs.export(virtual_path="/base_dir", output_path=output_path)
+
+            dcmp = filecmp.dircmp(base_dir,
+                                  os.path.join(tmp_dir, "reconstructed", "base_dir"))
+            assert len(dcmp.left_only) == 0, dcmp.left_only
+            assert len(dcmp.right_only) == 0, dcmp.right_only
+            assert len(dcmp.diff_files) == 0, dcmp.diff_files
+
     def test_delete(self):
         """Test deletion of files and directories
         """
@@ -95,7 +132,7 @@ class TestFS(unittest.TestCase):
                 assert len(l) == 4
 
             with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 4
+                assert len(l) == 4, len(l)
                 del l.encrypted_fs["/a/b/c.txt"]
                 assert len(l) == 3
 
@@ -153,7 +190,6 @@ class TestFS(unittest.TestCase):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-
 
     def test_iteration(self):
         tmp_id, tmp_path = tempfile.mkstemp()

@@ -583,8 +583,6 @@ class EncryptedFS(model.Dir):
     def __delitem__(self, key):
         """Delete a file or a dir, recursively in the latter case
         """
-        print(f"[watch] Deleting key {key}")
-        
         parent_names, name = self.split_path(key)
         target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
         if not name:

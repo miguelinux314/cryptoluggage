@@ -95,9 +95,6 @@ class TestFS(unittest.TestCase):
             dirs_level_1 = ["A", "B", "C"]
             dirs_level_2 = ["a", "b"]
             files_level_2 = ["f1", "f2"]
-            # dirs_level_1 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(10)]
-            # dirs_level_2 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(4)]
-            # files_level_2 = ["".join(random.choices(string.ascii_letters + string.digits, k=128)) for _ in range(12)]
             for dir_level_1 in dirs_level_1:
                 os.makedirs(os.path.join(base_dir, dir_level_1))
             for dir_level_2 in dirs_level_2:
@@ -157,7 +154,9 @@ class TestFS(unittest.TestCase):
             with Luggage(path=tmp_path, passphrase=self.test_password) as l:
                 assert len(l) == 7
                 with open(__file__, "rb") as f:
-                    assert l.encrypted_fs["/a/x/y2/z1.txt"] == f.read()
+                    read = l.encrypted_fs["/a/x/y2/z1.txt"]
+                    expected = f.read()
+                    assert read == expected
                 del l.encrypted_fs["/a/x/y1"]
 
             with Luggage(path=tmp_path, passphrase=self.test_password) as l:

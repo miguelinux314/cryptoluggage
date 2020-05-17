@@ -235,15 +235,23 @@ class EncryptedFS(model.Dir):
     def name(self):
         return self.root.name
 
+    @name.setter
+    def name(self, new_value):
+        self.root.name = new_value
+
     @property
     def parent(self):
         return self.root.parent
+
+    @parent.setter
+    def parent(self, new_value):
+        self.root.parent = new_value
 
     def insert_disk_file(self, virtual_path, file_or_path, cursor=None):
         """Insert a file given its path or an open file with its contents.
 
         :param virtual_path: a str-like object that points to a file in the Luggage's
-          virtual (encrypted) filesystem. Example paths are:
+          virtual (encrypted) filesystem or an existing dir. Example paths are:
                 /a.txt
                 a.txt
           A file named a.txt at the luggage's root.
@@ -257,38 +265,15 @@ class EncryptedFS(model.Dir):
           to the db, and changes are commited after insertion. If not None,
           this cursor is used and changes are NOT commited.
         """
-        # Process target path
-        virtual_parent_names, virtual_file_name = self.split_path(virtual_path)
-        try:
-            virtual_file_name = virtual_file_name if virtual_file_name else os.path.basename(file_or_path)
-            if not virtual_file_name:
-                raise BadPathException("Cannot determine input file name")
-        except TypeError as ex:
-            raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+        target_dir, virtual_file_name = self.get_target_dir_and_name(target_path=virtual_path, source_file_or_path=file_or_path)
 
+        # Delete previous file if existing
         try:
-            target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=True)
-        except BadPathException as ex:
-            raise BadPathException(f"Cannot insert contents inside a non-directory ({file_or_path} -> {virtual_path})")
-
-        if virtual_file_name in target_dir.children:
-            target_dir = target_dir.children[virtual_file_name]
-            try:
-                virtual_file_name = os.path.basename(file_or_path)
-                if not virtual_file_name:
-                    raise BadPathException("Cannot determine input file name")
-            except TypeError:
-                raise BadPathException("Cannot insert an open file into a folder path - ") from ex
-            try:
-                if virtual_file_name in target_dir.children:
-                    try:
-                        target_dir.children[virtual_file_name].children
-                        raise BadPathException(
-                            f"Cannot overwrite existing dir {target_dir.children[virtual_file_name].path} with a file {file_or_path}")
-                    except AttributeError:
-                        pass
-            except AttributeError:
-                target_dir = target_dir.parent
+            previous_file = target_dir.children[virtual_file_name]
+            # virtual_file_name = previous_file.name
+            del self[previous_file.path]
+        except KeyError:
+            pass
 
         # Get file contents
         try:
@@ -301,31 +286,72 @@ class EncryptedFS(model.Dir):
                 raise ValueError(f"right value of type {type(file_or_path)} not valid")
         assert contents is not None
 
-        # Delete previous file if existing
-        try:
-            previous_file = target_dir.children[virtual_file_name]
-            del self[previous_file.path]
-        except KeyError:
-            pass
-
         # Store new token
         file_cursor = self.luggage.db_conn.cursor() if cursor is None else cursor
         file_cursor.execute(r"INSERT INTO token_store (token) VALUES (?)",
                             (self.luggage.master_fernet.encrypt_binary(data=contents),))
         new_file = model.File(name=virtual_file_name, parent=target_dir, token_id=file_cursor.lastrowid)
         target_dir.children[new_file.name] = new_file
-        self._replace_root_dumps(cursor=file_cursor)
+        self._replace_root_dumps(cursor=file_cursor, commit=cursor is None)
 
-        # Commit only if a cursor was not passed as argument
-        if cursor is None:
-            self.luggage.db_conn.commit()
+    def get_target_dir_and_name(self, target_path, source_file_or_path, create=True):
+        """
+        Given a target virtual path and a path or file-like objects,
+        verify that they are valid (raises BadPathException otherwise),
+        and return the :class:`model.Dir` where a file can be stored,
+        and the name that file should have (target_path can point to a directory,
+        and in that case source_file_or_path must be a path (otherwise a BadPathException is rised).
+        :param target_path: a path within the luggage. It can point to existing files (its dir and name are returned),
+          or to existing dirs. If it points to a dir, it is verified that that dir does not have a subfolder
+          with the same name as source_file_or_path. If verification passes, the dir pointed at becomes
+          the one being returned.
+        :param source_file_or_path: a path to a disk file (existence not checked), or an open file-like object.
+          If an open file is passed as argument, target path must point to a file or a BadPathException is risen.
+        :param create: if True, parent folder are created as needed
+        :return: target_dir, target_name; where target_dir is a :class:`model.Dir` instance
+          and target_name is the name that should be used for the contents of insert source_file_or_path
+        """
+        # Process target path
+        virtual_parent_names, target_name = self.split_path(target_path)
+
+        try:
+            target_name = target_name if target_name else os.path.basename(source_file_or_path)
+            if not target_name:
+                raise BadPathException("Cannot determine input file name")
+        except TypeError as ex:
+            raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+
+        try:
+            target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=create)
+        except BadPathException as ex:
+            raise BadPathException(f"Cannot insert contents inside a non-directory ({source_file_or_path} -> {target_path})")
+
+        if target_name in target_dir.children:
+            target_dir = target_dir.children[target_name]
+            # try:
+            #     target_name = os.path.basename(source_file_or_path)
+            #     if not target_name:
+            #         raise BadPathException("Cannot determine input file name")
+            # except TypeError:
+            #     raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+            try:
+                if target_name in target_dir.children:
+                    try:
+                        target_dir.children[target_name].children
+                        raise BadPathException(
+                            f"Cannot overwrite existing dir {target_dir.children[target_name].path} with a file {source_file_or_path}")
+                    except AttributeError:
+                        pass
+            except AttributeError:
+                target_dir = target_dir.parent
+
+        return target_dir, target_name
 
     def insert_disk_dir(self, virtual_path, dir_path):
         """Recursively insert a directory into the luggage.
         """
         dir_path = os.path.abspath(dir_path)
 
-        cursor = self.luggage.db_conn.cursor()
         for dirpath, _, filenames in os.walk(dir_path):
             dirpath = os.path.abspath(dirpath)
             target_dir_path = os.path.join(
@@ -340,8 +366,7 @@ class EncryptedFS(model.Dir):
             if not filenames:
                 # Make sure that dirs without files are also created
                 _ = self.dir_from_path(virtual_path=target_dir_path, create=True)
-        self._replace_root_dumps(cursor=cursor)
-        self.luggage.db_conn.commit()
+        self._replace_root_dumps(cursor=self.luggage.db_conn.cursor(), commit=True)
 
     def export(self, virtual_path, output_path):
         output_path = os.path.realpath(os.path.expanduser(output_path))
@@ -392,48 +417,68 @@ class EncryptedFS(model.Dir):
 
     def move(self, source_path, target_path):
         """Move source into target, creating target's parents recursively if necessary.
+        source_path must exist prior to this call. Target path will be overwritten if both source and target
+        are files. If target_path is an existing dir, source is simply moved into it.
         """
-        source_parents, source_name = self.split_path(source_path)
-        if not source_parents and not source_name:
-            raise BadPathException("Cannot rename the root")
+        source_node = self.get_node(virtual_path=source_path)
         try:
-            source_dir = self.dir_from_parents(parent_names=source_parents, create=False)
-            source_node = source_dir.children[source_name]
-        except KeyError as ex:
-            raise BadPathException(f"Source path {source_path} does not exist") from ex
-
-        target_parents, target_name = self.split_path(target_path)
-        target_dir = self.dir_from_parents(parent_names=target_parents, create=True)
-
-        # target_name = target_name if target_name else source_name
-        # TODO: add conditions when already exists
-        try:
-            existing_target_node = target_dir.children[target_name if target_name else source_name]
-
+            target_node = self.get_node(virtual_path=target_path)
+            if source_node is target_node:
+                raise BadPathException(f"Cannot move {source_path} to itself")
+            # Moving to an existing path
             try:
-                existing_target_node.children
-                target_dir = existing_target_node
+                # Moving into an existing dir
+                if source_node.name in target_node.children:
+                    if hasattr(target_node.children[source_node.name], "children"):
+                        raise BadPathException(
+                            f"Cannot move directory {source_path} into existing file {target_node.children[source_name]}")
+                # source_node.parent.children[source_node.name]
+                del source_node.parent.children[source_node.name]
+                source_node.parent = target_node
+                source_node.parent.children[source_node.name] = source_node
             except AttributeError:
-                try:
-                    source_node.children
+                # Moving into an existing file
+                if hasattr(source_node, "children"):
                     raise BadPathException(
-                        f"Cannot move a directory ({source_path}) into an existing file ({target_path})")
-                except AttributeError:
-                    pass
+                        f"Cannot move directory {source_path} into existing file {target_path}")
+                del self[target_node.path]
+                del source_node.parent.children[source_node.name]
+                source_node.name = target_node.name
+                source_node.parent = target_node.parent
+                source_node.parent.children[source_node.name] = source_node
         except KeyError:
-            pass
-        target_name = target_name if target_name else source_name
+            # Moving into a new path;
+            target_parents, target_name = self.split_path(virtual_path=target_path)
+            target_node = self.dir_from_parents(parent_names=target_parents, create=True)
+            del source_node.parent.children[source_node.name]
+            target_name = target_name if target_name else source_node.name
+            source_node.parent = target_node
+            source_node.name = target_name
+            source_node.parent.children[source_node.name] = source_node
 
-        source_node.name = target_name
-        target_dir.children[target_name] = source_node
-        del source_node.parent.children[source_name]
-        source_node.parent = target_dir
+        self._replace_root_dumps(cursor=self.luggage.db_conn.cursor(), commit=True)
 
-        if source_parents == target_parents and source_name == target_name:
-            raise BadPathException(f"Cannot move {source_path} into itself")
+    def get_node(self, virtual_path, load_contents=False):
+        """Get the model.Node corresponding to a path, or raise KeyError if not found.
+        (Note that both Files and Dirs can be returned).
 
-        print("TODO: dump results")
-        print("Truly remove overwritten files")
+        :param load_contents: if virtual_path exists and is a file, its contents
+          are returned instead of the file node if load_contents is True
+        """
+        parent_names, file_name = self.split_path(virtual_path)
+        target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
+        target_element = target_dir.children[file_name]
+        try:
+            target_element.children
+        except AttributeError:
+            if load_contents:
+                cursor = self.luggage.db_conn.cursor()
+                for token_data, in cursor.execute("SELECT token FROM token_store "
+                                                  f"WHERE id={target_element.token_id:d}"):
+                    return self.luggage.master_fernet.decrypt_binary(token_data)
+
+        return target_element
+
 
     def dumps(self):
         """Return a pickled string that represents the root node of this encrypted
@@ -525,34 +570,27 @@ class EncryptedFS(model.Dir):
         except AttributeError:
             pass
 
-    def _replace_root_dumps(self, cursor):
+    def _replace_root_dumps(self, cursor, commit=False):
         cursor.execute(r"REPLACE INTO token_store (id, token) VALUES (?, ?)",
                        (self.luggage.root_folder_id,
                         self.luggage.master_fernet.encrypt_binary(
                             self.luggage.encrypted_fs.dumps())))
+        if commit:
+            self.luggage.db_conn.commit()
 
     def __getitem__(self, virtual_path):
-        """
+        """Return an EncryptedFS instance if a dir is pointed to,
+        or the contents of a file if a file is pointed to.
         :param virtual_path: path to the element to be retrieved
         :return: if virtual_path points to a folder, an EncryptedFS instance
           is returned. If it points to a file, the contents (bytes) of the
           file are returned.
         """
-        parent_names, file_name = self.split_path(virtual_path)
-        target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
-        if not file_name:
-            return EncryptedFS(luggage=self.luggage, root=target_dir)
-        try:
-            target = target_dir.children[file_name]
-            if isinstance(target, model.Dir):
-                return EncryptedFS(luggage=self.luggage, root=target)
-            elif isinstance(target, model.File):
-                cursor = self.luggage.db_conn.cursor()
-                for token_data, in cursor.execute("SELECT token FROM token_store "
-                                                  f"WHERE id={target.token_id:d}"):
-                    return self.luggage.master_fernet.decrypt_binary(token_data)
-        except KeyError as ex:
-            raise KeyError(virtual_path) from ex
+        node = self.get_node(virtual_path=virtual_path, load_contents=True)
+        if isinstance(node, model.Dir):
+            return EncryptedFS(luggage=self.luggage, root=node)
+        return node
+
 
     def __setitem__(self, virtual_path, value):
         """Save a file or directory to the virtual path, creating parent dirs as necessary.
@@ -600,8 +638,7 @@ class EncryptedFS(model.Dir):
                 cursor.execute(f"DELETE FROM token_store WHERE id={file.token_id:d}")
 
         del target.parent.children[target.name]
-        self._replace_root_dumps(cursor)
-        self.luggage.db_conn.commit()
+        self._replace_root_dumps(cursor, commit=True)
 
     def __contains__(self, virtual_path):
         """

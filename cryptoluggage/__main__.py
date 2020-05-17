@@ -129,7 +129,7 @@ if __name__ == '__main__':
         parser_insert_file.set_defaults(func=insert_file_or_dir, luggage=luggage)
 
         parser_list_files = command_subparsers.add_parser(
-            "lfiles", aliases=["mv", "fmv"], help="Move and rename files")
+            "fmove", aliases=["mv", "fmv"], help="Move and rename files")
         parser_list_files.add_argument("source_virtual_path", help="Source existing file or dir in the luggage")
         parser_list_files.add_argument("target_virtual_path", help="Destination path")
         parser_list_files.set_defaults(func=move, luggage=luggage)
@@ -151,7 +151,7 @@ if __name__ == '__main__':
                     ("#aaaaaa bold", prompt[:index]),
                     ("#ff5500 bold", prompt[index]),
                     ("#aaaaaa bold", prompt[index+1:]),
-                    ("#ffe37d bold", "· "),
+                    ("#ffe37d bold", "◉ "),
                 ])
                 index += speed
                 speed = -speed if not 0 < index < len(prompt) -1 else speed

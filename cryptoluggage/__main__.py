@@ -51,7 +51,9 @@ def extract_file_or_dir(options):
 def insert_file_or_dir(options):
     file_or_dir_path = os.path.expanduser(options.file_or_dir_path)
     options.luggage.encrypted_fs[options.luggage_path] = os.path.expanduser(file_or_dir_path)
-
+    
+def move(options):
+    options.luggage.encrypted_fs.move(source_path=options.source_virtual_path, target_path=options.target_virtual_path)
 
 def exit_luggage(options=None):
     print("Bye")
@@ -125,6 +127,12 @@ if __name__ == '__main__':
         parser_insert_file.add_argument("file_or_dir_path")
         parser_insert_file.add_argument("luggage_path")
         parser_insert_file.set_defaults(func=insert_file_or_dir, luggage=luggage)
+
+        parser_list_files = command_subparsers.add_parser(
+            "lfiles", aliases=["mv", "fmv"], help="Move and rename files")
+        parser_list_files.add_argument("source_virtual_path", help="Source existing file or dir in the luggage")
+        parser_list_files.add_argument("target_virtual_path", help="Destination path")
+        parser_list_files.set_defaults(func=move, luggage=luggage)
 
         parser_quit = command_subparsers.add_parser(
             "quit", aliases=["exit"], help="Exit the Luggage prompt")

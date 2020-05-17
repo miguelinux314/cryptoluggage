@@ -10,7 +10,6 @@ import getpass
 import shlex
 import prompt_toolkit
 import prompt_toolkit.auto_suggest
-import tempfile
 
 import cryptoluggage
 
@@ -134,12 +133,23 @@ if __name__ == '__main__':
         parser_help = command_subparsers.add_parser("help", help="Show this help")
         parser_help.set_defaults(func=lambda options: command_parser.print_help(), luggage=luggage)
 
-        should_exit = False
+        index = 0
+        speed = 1
         session = prompt_toolkit.PromptSession()
-        while not should_exit:
+        while True:
             try:
+                prompt = "Luggage"
+                formatted_text = prompt_toolkit.formatted_text.FormattedText([
+                    ("#aaaaaa bold", prompt[:index]),
+                    ("#ff5500 bold", prompt[index]),
+                    ("#aaaaaa bold", prompt[index+1:]),
+                    ("#ffe37d bold", "· "),
+                ])
+                index += speed
+                speed = -speed if not 0 < index < len(prompt) -1 else speed
+
                 commands = shlex.split(
-                    session.prompt("Luggage> ", auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
+                    session.prompt(formatted_text, auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
                 try:
                     command_options = command_parser.parse_args(commands)
                 except SystemExit as ex:

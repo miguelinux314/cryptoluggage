@@ -265,7 +265,8 @@ class EncryptedFS(model.Dir):
           to the db, and changes are commited after insertion. If not None,
           this cursor is used and changes are NOT commited.
         """
-        target_dir, virtual_file_name = self.get_target_dir_and_name(target_path=virtual_path, source_file_or_path=file_or_path)
+        target_dir, virtual_file_name = self.get_target_dir_and_name(target_path=virtual_path,
+                                                                     source_file_or_path=file_or_path)
 
         # Delete previous file if existing
         try:
@@ -324,7 +325,8 @@ class EncryptedFS(model.Dir):
         try:
             target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=create)
         except BadPathException as ex:
-            raise BadPathException(f"Cannot insert contents inside a non-directory ({source_file_or_path} -> {target_path})")
+            raise BadPathException(
+                f"Cannot insert contents inside a non-directory ({source_file_or_path} -> {target_path})")
 
         if target_name in target_dir.children:
             target_dir = target_dir.children[target_name]
@@ -466,7 +468,11 @@ class EncryptedFS(model.Dir):
           are returned instead of the file node if load_contents is True
         """
         parent_names, file_name = self.split_path(virtual_path)
+        if not parent_names and not file_name:
+            return self
+
         target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
+
         target_element = target_dir.children[file_name]
         try:
             target_element.children
@@ -478,7 +484,6 @@ class EncryptedFS(model.Dir):
                     return self.luggage.master_fernet.decrypt_binary(token_data)
 
         return target_element
-
 
     def dumps(self):
         """Return a pickled string that represents the root node of this encrypted
@@ -542,19 +547,30 @@ class EncryptedFS(model.Dir):
                 raise BadPathException(f"{target_dir} is not a directory")
         return target_dir
 
-    def print_hierarchy(self, filter=None):
-        """Print the filesystem hierarchy
-        """
-        self._print_node(node=self.root, level=0, filter=filter)
+    def print_node_list(self, filter_string=None):
+        """Print a list of all nodes contained in the filesystem"""
+        nodes = self.root.get_descendents(get_files=True, get_dirs=True)
+        if filter_string:
+            nodes = (n for n in nodes if filter_string in n.path)
+        root_node = next(nodes)
+        print(f"[{self.luggage.path}]")
+        for node in nodes:
+            print(node.path)
 
-    def _print_node(self, node, level, filter=None):
+    def print_tree(self, filter_string=None):
+        """Print the filesystem hierarchy as a tree
+        """
+        self._print_node(node=self.root, level=0, filter_string=filter_string)
+
+    def _print_node(self, node, level, filter_string=None):
         s = " " * (3 * (level - 1)) + (" +-" if level > 0 else "")
 
         relevant_subfolder = hasattr(node, "children") and \
-                             (filter is None or any(filter in d.name for d in node.get_all_descendents()))
+                             (filter_string is None
+                              or any(filter_string in d.name for d in node.get_all_descendents()))
 
         if node is not self.root or self.luggage.encrypted_fs.root is not self.root:
-            if filter is None or filter in node.name or relevant_subfolder:
+            if filter_string is None or filter_string in node.name or relevant_subfolder:
                 if hasattr(node, "children"):
                     lbracket, rbracket = "[", "]"
                 else:
@@ -566,7 +582,7 @@ class EncryptedFS(model.Dir):
             if relevant_subfolder:
                 for name, node in node.children.items():
                     print(" " * (3 * (level)) + " |")
-                    self._print_node(node=node, level=level + 1, filter=filter)
+                    self._print_node(node=node, level=level + 1, filter_string=filter_string)
         except AttributeError:
             pass
 
@@ -590,7 +606,6 @@ class EncryptedFS(model.Dir):
         if isinstance(node, model.Dir):
             return EncryptedFS(luggage=self.luggage, root=node)
         return node
-
 
     def __setitem__(self, virtual_path, value):
         """Save a file or directory to the virtual path, creating parent dirs as necessary.
@@ -624,7 +639,8 @@ class EncryptedFS(model.Dir):
         parent_names, name = self.split_path(key)
         target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
         if not name:
-            assert target_dir is not self.luggage.encrypted_fs.root
+            if target_dir is self.luggage.encrypted_fs.root:
+                raise BadPathException("Cannot delete the root")
             target = target_dir
         else:
             target = target_dir.children[name]
@@ -634,7 +650,7 @@ class EncryptedFS(model.Dir):
             cursor.execute(f"DELETE FROM token_store WHERE id={target.token_id:d}")
         except AttributeError:
             # It must be a directory
-            for file in target.get_descendent_files():
+            for file in target.get_descendents(get_files=True, get_dirs=False):
                 cursor.execute(f"DELETE FROM token_store WHERE id={file.token_id:d}")
 
         del target.parent.children[target.name]

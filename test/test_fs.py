@@ -181,7 +181,7 @@ class TestFS(unittest.TestCase):
                     l.encrypted_fs[p] = __file__
 
             with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                generated_paths = [f.path for f in l.encrypted_fs.root.get_descendent_files()]
+                generated_paths = [f.path for f in l.encrypted_fs.root.get_descendents(get_dirs=False, get_files=True)]
                 generated_paths = [p[1:] if p.startswith("/") else p for p in generated_paths]
                 paths = [p[1:] if p.startswith("/") else p for p in paths]
                 assert set(generated_paths) == set(paths), (set(generated_paths), set(paths))

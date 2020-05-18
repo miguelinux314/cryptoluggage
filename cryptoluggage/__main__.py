@@ -39,8 +39,12 @@ def list_secrets(options):
     print("\n".join(secret_names))
 
 
+def print_tree(options):
+    options.luggage.encrypted_fs.print_tree(filter_string=options.filter)
+
+
 def list_files(options):
-    options.luggage.encrypted_fs.print_hierarchy(filter=options.filter)
+    options.luggage.encrypted_fs.print_node_list(filter_string=options.filter)
 
 
 def extract_file_or_dir(options):
@@ -51,9 +55,28 @@ def extract_file_or_dir(options):
 def insert_file_or_dir(options):
     file_or_dir_path = os.path.expanduser(options.file_or_dir_path)
     options.luggage.encrypted_fs[options.luggage_path] = os.path.expanduser(file_or_dir_path)
-    
+
+
 def move(options):
     options.luggage.encrypted_fs.move(source_path=options.source_virtual_path, target_path=options.target_virtual_path)
+
+
+def delete(options):
+    try:
+        target_node = options.luggage.encrypted_fs.get_node(options.virtual_path)
+    except KeyError:
+        raise cryptoluggage.BadPathException(f"Path {options.virtual_path} not found.")
+    if not target_node.parent:
+        raise cryptoluggage.BadPathException(f"Deleting root folder is not supported")
+
+    deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
+    if str(deleting_nodes) == prompt_toolkit.prompt(
+            f"About to delete {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
+        del options.luggage.encrypted_fs[options.virtual_path]
+        print(f"Deleted {target_node.path}.")
+    else:
+        print("Typed text did not match. (Nothing was deleted)")
+
 
 def exit_luggage(options=None):
     print("Bye")
@@ -113,8 +136,15 @@ if __name__ == '__main__':
 
         parser_list_files = command_subparsers.add_parser(
             "lfiles", aliases=["ls", "fls"], help="List existing files")
-        parser_list_files.add_argument("filter", help="Show only files containing this string", nargs="?")
+        parser_list_files.add_argument("filter", help="Show only files containing this string in their virtual path",
+                                       nargs="?")
         parser_list_files.set_defaults(func=list_files, luggage=luggage)
+
+        parser_tree_files = command_subparsers.add_parser(
+            "tree", help="Show a tree of existing files")
+        parser_tree_files.add_argument("filter", help="Show only files containing this string in their virtual path",
+                                       nargs="?")
+        parser_tree_files.set_defaults(func=print_tree, luggage=luggage)
 
         parser_extract_file = command_subparsers.add_parser(
             "efile", aliases=["ecp"], help="Extract a file or a directory from the luggage to disk")
@@ -128,11 +158,18 @@ if __name__ == '__main__':
         parser_insert_file.add_argument("luggage_path")
         parser_insert_file.set_defaults(func=insert_file_or_dir, luggage=luggage)
 
-        parser_list_files = command_subparsers.add_parser(
+        parser_move = command_subparsers.add_parser(
             "fmove", aliases=["mv", "fmv"], help="Move and rename files")
-        parser_list_files.add_argument("source_virtual_path", help="Source existing file or dir in the luggage")
-        parser_list_files.add_argument("target_virtual_path", help="Destination path")
-        parser_list_files.set_defaults(func=move, luggage=luggage)
+        parser_move.add_argument("source_virtual_path", help="Source existing file or dir in the luggage")
+        parser_move.add_argument("target_virtual_path", help="Destination path")
+        parser_move.set_defaults(func=move, luggage=luggage)
+
+        parser_delete = command_subparsers.add_parser(
+            "fdelete", aliases=["rm", "frm"], help="Delete dirs or files")
+        parser_delete.add_argument(
+            "virtual_path", help="Path to an existing file or directory, which is to be removed. "
+                                 "Dirs are removed recursively.")
+        parser_delete.set_defaults(func=delete, luggage=luggage)
 
         parser_quit = command_subparsers.add_parser(
             "quit", aliases=["exit"], help="Exit the Luggage prompt")
@@ -151,11 +188,11 @@ if __name__ == '__main__':
                     ("#ffe37d bold", "◐ "),
                     ("#aaaaaa bold", prompt[:index]),
                     ("#ff5500 bold", prompt[index]),
-                    ("#aaaaaa bold", prompt[index+1:]),
+                    ("#aaaaaa bold", prompt[index + 1:]),
                     ("#ffe37d bold", " ◑ "),
                 ])
                 index += speed
-                speed = -speed if not 0 < index < len(prompt) -1 else speed
+                speed = -speed if not 0 < index < len(prompt) - 1 else speed
 
                 commands = shlex.split(
                     session.prompt(formatted_text, auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
@@ -169,8 +206,8 @@ if __name__ == '__main__':
                 try:
                     command_options.func(command_options)
                 except Exception as ex:
-                    # print(repr(ex))
-                    raise ex
+                    # raise ex
+                    print(f"{type(ex).__name__}: {ex}{'.' if not str(ex).endswith('.') else ''}")
             except KeyboardInterrupt:
                 exit_luggage()
     finally:

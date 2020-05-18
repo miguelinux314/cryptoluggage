@@ -52,43 +52,8 @@ class Node:
         self.name = name
         self.parent = parent
 
-    @property
-    def path(self):
-        elements = [self.name]
-        s = self
-        while s.parent is not None:
-            elements.append(s.parent.name if s.parent.parent is not None else '')
-            s = s.parent
-        return os.sep.join(reversed(elements))
-
-
-class Dir(Node):
-    """Directory (folder) node
-    """
-    def __init__(self, name, parent=None, children=None):
-        super().__init__(name=name, parent=parent)
-        self.children = sortedcontainers.SortedDict() if children is None \
-            else sortedcontainers.SortedDict({c.name: c for c in children})
-
-    def get_descendent_files(self):
-        """Generator of all model.File instances contained in this directory,
-        or any of its descendent subdirs.
-        """
-        pending_nodes = [self]
-        seen_nodes = set()
-        while pending_nodes:
-            node = pending_nodes.pop()
-            try:
-                for child in node.children.values():
-                    if child in seen_nodes:
-                        raise RuntimeError("Circular refernce")
-                    pending_nodes.append(child)
-                    seen_nodes.add(child)
-            except AttributeError:
-                yield node
-
     def get_all_descendents(self):
-        """Return a generator of all files and directories contained under this directory
+        """Return a generator that returns this node, all files and directories contained under it.
         """
         pending_nodes = [self]
         seen_nodes = set()
@@ -103,6 +68,51 @@ class Dir(Node):
                     seen_nodes.add(child)
             except AttributeError:
                 pass
+
+    def get_descendents(self, get_files, get_dirs):
+        """Generator of the list of self and (if applicable) all descendent
+        files and dirs, filtered by type.
+        :param get_files: if True, model.File descendents will be generated
+        :param get_dirs: if True, model.Dir descendents will be generated
+        """
+
+        pending_nodes = [self]
+        seen_nodes = set()
+        while pending_nodes:
+            node = pending_nodes.pop()
+            try:
+                for child in node.children.values():
+                    if child in seen_nodes:
+                        raise RuntimeError("Circular refernce")
+                    pending_nodes.append(child)
+                    seen_nodes.add(child)
+                if get_dirs:
+                    yield node
+            except AttributeError:
+                if get_files:
+                    yield node
+
+    @property
+    def path(self):
+        if self.parent is None:
+            return str(os.sep)
+
+        elements = [self.name]
+        s = self
+        while s.parent is not None:
+            elements.append(s.parent.name if s.parent.parent is not None else '')
+            s = s.parent
+        return os.sep.join(reversed(elements))
+
+
+class Dir(Node):
+    """Directory (folder) node
+    """
+
+    def __init__(self, name, parent=None, children=None):
+        super().__init__(name=name, parent=parent)
+        self.children = sortedcontainers.SortedDict() if children is None \
+            else sortedcontainers.SortedDict({c.name: c for c in children})
 
     def __iter__(self):
         """Iterate over children of this dir

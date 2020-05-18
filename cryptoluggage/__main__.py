@@ -10,33 +10,50 @@ import getpass
 import shlex
 import prompt_toolkit
 import prompt_toolkit.auto_suggest
+import csv
 
 import cryptoluggage
 
+def parse_secret_name_or_index(luggage, param):
+    """Return a secret's name contained in the luggage.
+    If it denotes an existing file name, that name is returned.
+    If it doesn't and it is an integer, the name of the secret at that
+    position is returned. Otherwise, a KeyError exception is rised.
+    """
+    if not param in luggage.secrets:
+        try:
+            param = tuple(luggage.secrets.keys())[int(param)]
+        except (ValueError, KeyError):
+            raise KeyError(param)
+    return param
 
 def print_secret(options):
-    print(options.luggage.secrets[options.secret_key])
-
+    secret_name = parse_secret_name_or_index(luggage=options.luggage, param=options.secret_key)
+    if options.secret_key != secret_name:
+        print(f"Showing secret key {secret_name}:\n")
+    print(options.luggage.secrets[secret_name])
 
 def write_secret(options):
+    secret_name = parse_secret_name_or_index(luggage=options.luggage, param=options.secret_key)
     try:
-        options.luggage.secrets[options.secret_key] = prompt_toolkit.prompt(
-            f"Editing secret {options.secret_key}. ESC,Enter to save. Ctrl+C to cancel.\n",
+        options.luggage.secrets[secret_name] = prompt_toolkit.prompt(
+            f"Editing secret '{secret_name}'. ESC,Enter to save. Ctrl+C to cancel.\n\n",
             multiline=True,
-            default=options.luggage.secrets[
-                options.secret_key] if options.secret_key in options.luggage.secrets else "")
+            default=options.luggage.secrets[secret_name] if secret_name in options.luggage.secrets else "")
     except KeyboardInterrupt:
-        print(f"Aborting editing of {options.secret_key}")
+        print(f"Aborting editing of secret '{secret_name}'")
         pass
 
 
 def list_secrets(options):
-    if options.filter is None:
-        secret_names = sorted(options.luggage.secrets, key=lambda s: s.lower())
+    if not options.filter:
+        for i, secret_name in enumerate(options.luggage.secrets):
+            print(f"[{i}] {secret_name}")
     else:
-        secret_names = sorted((s for s in options.luggage.secrets.keys() if options.filter in s),
-                              key=lambda s: s.lower())
-    print("\n".join(secret_names))
+        filter = options.filter.lower()
+        for i, secret_name in enumerate(options.luggage.secrets):
+            if filter in secret_name.lower():
+                print(f"[{i}] {secret_name}")
 
 
 def print_tree(options):
@@ -60,7 +77,6 @@ def insert_file_or_dir(options):
 def move(options):
     options.luggage.encrypted_fs.move(source_path=options.source_virtual_path, target_path=options.target_virtual_path)
 
-
 def delete(options):
     try:
         target_node = options.luggage.encrypted_fs.get_node(options.virtual_path)
@@ -76,6 +92,23 @@ def delete(options):
         print(f"Deleted {target_node.path}.")
     else:
         print("Typed text did not match. (Nothing was deleted)")
+
+def import_secret_csv(options):
+    with open(os.path.expanduser(options.csv_path), "r") as secrets_file:
+        rows = [r[:2] for r in list(csv.reader(secrets_file))]
+        
+    
+    secret_dict = {name: value for name, value in rows}
+    existing_secret_count = sum(1 for n in secret_dict.keys() if n in options.luggage.secrets)
+    if existing_secret_count:
+        if str(existing_secret_count) != prompt_toolkit.prompt(
+                f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
+            print("Typed text did not match. (Nothing was inserted nor overwriten)")
+            return
+
+    for name, value in rows:
+        options.luggage.secrets[name] = value
+
 
 
 def exit_luggage(options=None):
@@ -133,6 +166,11 @@ if __name__ == '__main__':
             "lsecrets", aliases=["sls"], help="List existing secrets")
         parser_list_secrets.add_argument("filter", help="Show only secrets containing this string", nargs="?")
         parser_list_secrets.set_defaults(func=list_secrets, luggage=luggage)
+
+        parser_import_secrets = command_subparsers.add_parser(
+            "isecrets", aliases=["is"], help="Import a CSV of secrets (2 columns: name and contents.")
+        parser_import_secrets.add_argument("csv_path")
+        parser_import_secrets.set_defaults(func=import_secret_csv, luggage=luggage)
 
         parser_list_files = command_subparsers.add_parser(
             "lfiles", aliases=["ls", "fls"], help="List existing files")
@@ -206,7 +244,7 @@ if __name__ == '__main__':
                 try:
                     command_options.func(command_options)
                 except Exception as ex:
-                    # raise ex
+                    raise ex
                     print(f"{type(ex).__name__}: {ex}{'.' if not str(ex).endswith('.') else ''}")
             except KeyboardInterrupt:
                 exit_luggage()

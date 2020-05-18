@@ -148,10 +148,11 @@ if __name__ == '__main__':
             try:
                 prompt = "Luggage"
                 formatted_text = prompt_toolkit.formatted_text.FormattedText([
+                    ("#ffe37d bold", "◐ "),
                     ("#aaaaaa bold", prompt[:index]),
                     ("#ff5500 bold", prompt[index]),
                     ("#aaaaaa bold", prompt[index+1:]),
-                    ("#ffe37d bold", "◉ "),
+                    ("#ffe37d bold", " ◑ "),
                 ])
                 index += speed
                 speed = -speed if not 0 < index < len(prompt) -1 else speed

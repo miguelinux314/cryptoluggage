@@ -203,7 +203,7 @@ class Main(AutoFire):
         deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
         if str(deleting_nodes) == prompt_toolkit.prompt(
                 f"About to delete {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
-            del self.luggage.encrypted_fs[options.virtual_path]
+            del self.luggage.encrypted_fs[virtual_path]
             print(f"Deleted {target_node.path}.")
         else:
             print("Typed text did not match. (Nothing was deleted)")
@@ -236,7 +236,7 @@ class Main(AutoFire):
         sys.exit(0)
 
 
-if __name__ == '__main__':
+def __main__():
     invocation_parser = argparse.ArgumentParser()
     invocation_subparsers = invocation_parser.add_subparsers(dest="command")
     open_parser = invocation_subparsers.add_parser("open")
@@ -267,42 +267,43 @@ if __name__ == '__main__':
             sys.exit(-1)
     else:
         raise RuntimeError(f"Unrecognized command {options.command}")
+    del options
 
-    try:
-        index = 0
-        speed = 1
-        session = prompt_toolkit.PromptSession()
-        main = Main(luggage=luggage)
-        while True:
+    index = 0
+    speed = 1
+    session = prompt_toolkit.PromptSession()
+    main = Main(luggage=luggage)
+    while True:
+        try:
+            prompt = "Luggage"
+            formatted_text = prompt_toolkit.formatted_text.FormattedText([
+                ("#ffe37d bold", "◐ "),
+                ("#aaaaaa bold", prompt[:index]),
+                ("#ff5500 bold", prompt[index]),
+                ("#aaaaaa bold", prompt[index + 1:]),
+                ("#ffe37d bold", " ◑ "),
+            ])
+            index += speed
+            speed = -speed if not 0 < index < len(prompt) - 1 else speed
+
+            commands = shlex.split(
+                session.prompt(formatted_text, auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
+            if not commands:
+                continue
             try:
-                prompt = "Luggage"
-                formatted_text = prompt_toolkit.formatted_text.FormattedText([
-                    ("#ffe37d bold", "◐ "),
-                    ("#aaaaaa bold", prompt[:index]),
-                    ("#ff5500 bold", prompt[index]),
-                    ("#aaaaaa bold", prompt[index + 1:]),
-                    ("#ffe37d bold", " ◑ "),
-                ])
-                index += speed
-                speed = -speed if not 0 < index < len(prompt) - 1 else speed
+                r = main.fire(commands[0], *commands[1:])
+            except CommandNotFoundError:
+                print(f"Command {commands[0]} not found.\nUsage:")
+                main.print_help()
+            except KeyError as ex:
+                print(f"Key {ex} not found.\nUsage:")
+                main.print_help()
+            except TypeError as ex:
+                print(f"{type(ex)}: {ex}")
+                print()
+                main.print_help()
+        except (KeyboardInterrupt, EOFError):
+            main.exit_luggage()
 
-                commands = shlex.split(
-                    session.prompt(formatted_text, auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
-                if not commands:
-                    continue
-                try:
-                    r = main.fire(commands[0], *commands[1:])
-                except CommandNotFoundError:
-                    print(f"Command {commands[0]} not found.\nUsage:")
-                    main.print_help()
-                except KeyError as ex:
-                    print(f"Key {ex} not found.\nUsage:")
-                    main.print_help()
-                except TypeError as ex:
-                    print(f"{type(ex)}: {ex}")
-                    print()
-                    main.print_help()
-            except (KeyboardInterrupt, EOFError):
-                exit_luggage()
-    finally:
-        luggage.close()
+if __name__ == '__main__':
+    __main__()

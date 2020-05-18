@@ -498,8 +498,8 @@ class EncryptedFS(model.Dir):
         No checks are made about number of parents of file_name contents
         :return: parent_name_list, file_name
         """
-        if any(c not in string.printable for c in virtual_path):
-            raise ValueError("Virtual path contains non-printable characters")
+        # if any(c not in string.printable for c in virtual_path):
+        #     raise ValueError(f"Virtual path '{virtual_path}' contains non-printable characters")
         parents, file_name = os.path.split(virtual_path)
         parent_names = []
         while parents and os.path.normpath(parents) != "/":

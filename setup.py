@@ -34,5 +34,5 @@ setup(
     install_requires=[
         "cryptography", "filelock", "sortedcontainers", "prompt_toolkit"
     ],
-    entry_points={"console_scripts": ["cl=cryptoluggage.__main__:main"]},
+    entry_points={"console_scripts": ["cl=cryptoluggage.__main__:__main__"]},
 )

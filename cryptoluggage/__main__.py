@@ -11,8 +11,83 @@ import shlex
 import prompt_toolkit
 import prompt_toolkit.auto_suggest
 import csv
+import collections
+import inspect
 
 import cryptoluggage
+
+
+class CommandNotFoundError(Exception):
+    pass
+
+class AutoFire:
+    """Automatic CLI helper based on Google's fire.
+    """
+    name_to_fun = collections.OrderedDict({})
+
+    @classmethod
+    def exported_function(cls, aliases=[]):
+        def import_function_wrapper(fun):
+            names = list(aliases)
+            if not names:
+                names.append(fun.__name__)
+            for name in aliases:
+                if name in cls.name_to_fun:
+                    raise SyntaxError(f"{name} already defined (set to {cls.name_to_fun[name].__name__}")
+                cls.name_to_fun[name] = fun
+            return fun
+
+        return import_function_wrapper
+
+    def print_help(self, fun_name=None):
+        """Print help.
+        """
+        fun_to_names = collections.defaultdict(list)
+        for name, fun in self.name_to_fun.items():
+            fun_to_names[fun].append(name)
+        for name, fun in self.name_to_fun.items():
+            names = fun_to_names[fun]
+            if name != names[0]:
+                continue
+            if fun_name is not None and not any(fun_name == n for n in names):
+                continue
+            shown_args = inspect.getfullargspec(fun)[0]
+            defaults = inspect.getfullargspec(fun)[3]
+            if shown_args[0] == "self":
+                shown_args = shown_args[1:]
+            for i, arg in enumerate(shown_args):
+                try:
+                    shown_args[i] = f"{shown_args[i]}{'=' + str(defaults[i]) if defaults else ''}"
+                except IndexError:
+                    pass
+
+            shown_doc = [line.strip() for line in (fun.__doc__.splitlines() if fun.__doc__ else "")]
+            shown_doc = [l for l in shown_doc if l]
+
+            if fun_name is None:
+                shown_doc[0] += (" ..." if len(shown_doc) > 1 else '')
+                shown_doc = shown_doc[:1]
+            
+
+            shown_doc = "\n".join(shown_doc)
+            print(('\t' if fun_name is None else '') + f"{', '.join(names)}({', '.join(shown_args)}):\n{shown_doc}")
+            print()
+            if fun_name is not None:
+                break
+        else:
+            if fun_name is not None:
+                raise KeyError(fun_name)
+
+    name_to_fun["help"] = print_help
+
+    def fire(self, command, *args):
+        try:
+            fun = self.name_to_fun[command]
+        except KeyError:
+            raise CommandNotFoundError(command)
+        
+        fun(self, *args)
+
 
 def parse_secret_name_or_index(luggage, param):
     """Return a secret's name contained in the luggage.
@@ -23,97 +98,142 @@ def parse_secret_name_or_index(luggage, param):
     if not param in luggage.secrets:
         try:
             param = tuple(luggage.secrets.keys())[int(param)]
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError):
             raise KeyError(param)
     return param
 
-def print_secret(options):
-    secret_name = parse_secret_name_or_index(luggage=options.luggage, param=options.secret_key)
-    if options.secret_key != secret_name:
-        print(f"Showing secret key {secret_name}:\n")
-    print(options.luggage.secrets[secret_name])
 
-def write_secret(options):
-    secret_name = parse_secret_name_or_index(luggage=options.luggage, param=options.secret_key)
-    try:
-        options.luggage.secrets[secret_name] = prompt_toolkit.prompt(
-            f"Editing secret '{secret_name}'. ESC,Enter to save. Ctrl+C to cancel.\n\n",
-            multiline=True,
-            default=options.luggage.secrets[secret_name] if secret_name in options.luggage.secrets else "")
-    except KeyboardInterrupt:
-        print(f"Aborting editing of secret '{secret_name}'")
-        pass
+class Main(AutoFire):
+    def __init__(self, luggage):
+        super().__init__()
+        self.luggage = luggage
 
+    @AutoFire.exported_function(["scat", "sprint"])
+    def print_secret(self, secret_key):
+        """Show the contents of a secret.
+        """
+        secret_name = parse_secret_name_or_index(luggage=self.luggage, param=secret_key)
+        if secret_key != secret_name:
+            print(f"Showing secret '{secret_name}':")
+        print(self.luggage.secrets[secret_name])
 
-def list_secrets(options):
-    if not options.filter:
-        for i, secret_name in enumerate(options.luggage.secrets):
-            print(f"[{i}] {secret_name}")
-    else:
-        filter = options.filter.lower()
-        for i, secret_name in enumerate(options.luggage.secrets):
-            if filter in secret_name.lower():
-                print(f"[{i}] {secret_name}")
+    @AutoFire.exported_function(["sset"])
+    def write_secret(self, secret_key):
+        """Edit secret with name secret_key.
+        If the name doesn't exist, a new one can be created.
+        """
+        try:
+            secret_name = parse_secret_name_or_index(luggage=self.luggage, param=secret_key)
+        except KeyError:
+            secret_name = secret_key
+        try:
+            self.luggage.secrets[secret_name] = prompt_toolkit.prompt(
+                f"Editing secret '{secret_name}'. ESC,Enter to save. Ctrl+C to cancel.\n\n",
+                multiline=True,
+                default=self.luggage.secrets[secret_name] if secret_name in self.luggage.secrets else "")
+        except KeyboardInterrupt:
+            print(f"Aborting editing of secret '{secret_name}'")
+            pass
 
-
-def print_tree(options):
-    options.luggage.encrypted_fs.print_tree(filter_string=options.filter)
-
-
-def list_files(options):
-    options.luggage.encrypted_fs.print_node_list(filter_string=options.filter)
-
-
-def extract_file_or_dir(options):
-    options.luggage.encrypted_fs.export(
-        virtual_path=options.virtual_path, output_path=options.output_path)
-
-
-def insert_file_or_dir(options):
-    file_or_dir_path = os.path.expanduser(options.file_or_dir_path)
-    options.luggage.encrypted_fs[options.luggage_path] = os.path.expanduser(file_or_dir_path)
-
-
-def move(options):
-    options.luggage.encrypted_fs.move(source_path=options.source_virtual_path, target_path=options.target_virtual_path)
-
-def delete(options):
-    try:
-        target_node = options.luggage.encrypted_fs.get_node(options.virtual_path)
-    except KeyError:
-        raise cryptoluggage.BadPathException(f"Path {options.virtual_path} not found.")
-    if not target_node.parent:
-        raise cryptoluggage.BadPathException(f"Deleting root folder is not supported")
-
-    deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
-    if str(deleting_nodes) == prompt_toolkit.prompt(
-            f"About to delete {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
-        del options.luggage.encrypted_fs[options.virtual_path]
-        print(f"Deleted {target_node.path}.")
-    else:
-        print("Typed text did not match. (Nothing was deleted)")
-
-def import_secret_csv(options):
-    with open(os.path.expanduser(options.csv_path), "r") as secrets_file:
-        rows = [r[:2] for r in list(csv.reader(secrets_file))]
-        
-    
-    secret_dict = {name: value for name, value in rows}
-    existing_secret_count = sum(1 for n in secret_dict.keys() if n in options.luggage.secrets)
-    if existing_secret_count:
-        if str(existing_secret_count) != prompt_toolkit.prompt(
-                f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
-            print("Typed text did not match. (Nothing was inserted nor overwriten)")
+    @AutoFire.exported_function(["sls", "slist"])
+    def list_secrets(self, filter=None):
+        """List all secrets.
+        If filter is provided, only secrets that contain that string in the name are shown."""
+        if not self.luggage.secrets:
+            print("No secrets stored.")
             return
+        if not filter:
+            for i, secret_name in enumerate(self.luggage.secrets):
+                print(f"[{i}] {secret_name}")
+        else:
+            filter = filter.lower()
+            for i, secret_name in enumerate(self.luggage.secrets):
+                if filter in secret_name.lower():
+                    print(f"[{i}] {secret_name}")
 
-    for name, value in rows:
-        options.luggage.secrets[name] = value
+    @AutoFire.exported_function(["tree"])
+    def print_tree(self, filter=None):
+        """Print a tree representation of the stored files.
+        If filter is not None, only nodes containing that string in their paths
+        are shown.
+        """
+        self.luggage.encrypted_fs.print_tree(filter_string=filter)
 
+    @AutoFire.exported_function(["ls", "fls"])
+    def print_file_list(self, filter=None):
+        """Print a list representation of the stored files.
+        If filter is not None, only nodes containing that string in their paths
+        are shown.
+        """
+        self.luggage.encrypted_fs.print_node_list(filter_string=filter)
 
+    @AutoFire.exported_function(["ecp"])
+    def extract_file_or_dir(self, virtual_path, output_path):
+        """Extract luggage's file at virtual_path into output_path in the disk.
+        This method does not delete the file in the luggage.
+        """
+        self.luggage.encrypted_fs.export(
+            virtual_path=virtual_path, output_path=output_path)
 
-def exit_luggage(options=None):
-    print("Bye")
-    sys.exit(0)
+    @AutoFire.exported_function(["icp"])
+    def insert_file_or_dir(self, disk_path, virtual_path):
+        """Insert a disk's file or directory into the luggage's filesystem at virtual_path.
+        """
+        disk_path = os.path.expanduser(disk_path)
+        self.luggage.encrypted_fs[virtual_path] = os.path.expanduser(disk_path)
+
+    @AutoFire.exported_function(["mv", "fmv"])
+    def move(self, source_path, target_path):
+        """Move source_path into target_path in the luggage's filesystem.
+        """
+        self.luggage.encrypted_fs.move(source_path=source_path, target_path=target_path)
+
+    @AutoFire.exported_function(["frm", "rm"])
+    def delete(self, virtual_path):
+        """Delete virtual_path from the luggage's filesystem.
+        If virtual_path is a directory, all descendents are deleted recursively.
+        """
+        try:
+            target_node = self.luggage.encrypted_fs.get_node(virtual_path)
+        except KeyError:
+            raise cryptoluggage.BadPathException(f"Path {virtual_path} not found.")
+        if not target_node.parent:
+            raise cryptoluggage.BadPathException(f"Deleting root folder is not supported")
+
+        deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
+        if str(deleting_nodes) == prompt_toolkit.prompt(
+                f"About to delete {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
+            del self.luggage.encrypted_fs[options.virtual_path]
+            print(f"Deleted {target_node.path}.")
+        else:
+            print("Typed text did not match. (Nothing was deleted)")
+
+    @AutoFire.exported_function(["isecrets", "is"])
+    def import_secret_csv(self, csv_path):
+        """Import a CSV of secrets into the luggage.
+        The CSV must have at least two columns. The first column must contain keys
+        and the second column must contain their values.
+        """
+        with open(os.path.expanduser(csv_path), "r") as secrets_file:
+            rows = [r[:2] for r in list(csv.reader(secrets_file))]
+
+        secret_dict = {name: value for name, value in rows}
+        existing_secret_count = sum(1 for n in secret_dict.keys() if n in self.luggage.secrets)
+        if existing_secret_count:
+            if str(existing_secret_count) != prompt_toolkit.prompt(
+                    f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
+                print("Typed text did not match. (Nothing was inserted nor overwriten)")
+                return
+
+        for name, value in rows:
+            self.luggage.secrets[name] = value
+
+    @AutoFire.exported_function(["quit", "exit"])
+    def exit_luggage(self):
+        """Exit.
+        """
+        print("Bye")
+        sys.exit(0)
 
 
 if __name__ == '__main__':
@@ -149,76 +269,10 @@ if __name__ == '__main__':
         raise RuntimeError(f"Unrecognized command {options.command}")
 
     try:
-        command_parser = argparse.ArgumentParser()
-        command_subparsers = command_parser.add_subparsers(dest="command")
-
-        parser_read_secret = command_subparsers.add_parser(
-            "rsecret", aliases=["scat"], help="Read a secret from the luggage")
-        parser_read_secret.add_argument("secret_key")
-        parser_read_secret.set_defaults(func=print_secret, luggage=luggage)
-
-        parser_write_secret = command_subparsers.add_parser(
-            "wsecret", aliases=["sset"], help="Write a secret into the luggage")
-        parser_write_secret.add_argument("secret_key", help="Key (name) of the secret")
-        parser_write_secret.set_defaults(func=write_secret, luggage=luggage)
-
-        parser_list_secrets = command_subparsers.add_parser(
-            "lsecrets", aliases=["sls"], help="List existing secrets")
-        parser_list_secrets.add_argument("filter", help="Show only secrets containing this string", nargs="?")
-        parser_list_secrets.set_defaults(func=list_secrets, luggage=luggage)
-
-        parser_import_secrets = command_subparsers.add_parser(
-            "isecrets", aliases=["is"], help="Import a CSV of secrets (2 columns: name and contents.")
-        parser_import_secrets.add_argument("csv_path")
-        parser_import_secrets.set_defaults(func=import_secret_csv, luggage=luggage)
-
-        parser_list_files = command_subparsers.add_parser(
-            "lfiles", aliases=["ls", "fls"], help="List existing files")
-        parser_list_files.add_argument("filter", help="Show only files containing this string in their virtual path",
-                                       nargs="?")
-        parser_list_files.set_defaults(func=list_files, luggage=luggage)
-
-        parser_tree_files = command_subparsers.add_parser(
-            "tree", help="Show a tree of existing files")
-        parser_tree_files.add_argument("filter", help="Show only files containing this string in their virtual path",
-                                       nargs="?")
-        parser_tree_files.set_defaults(func=print_tree, luggage=luggage)
-
-        parser_extract_file = command_subparsers.add_parser(
-            "efile", aliases=["ecp"], help="Extract a file or a directory from the luggage to disk")
-        parser_extract_file.add_argument("virtual_path")
-        parser_extract_file.add_argument("output_path")
-        parser_extract_file.set_defaults(func=extract_file_or_dir, luggage=luggage)
-
-        parser_insert_file = command_subparsers.add_parser(
-            "ifile", aliases=["icp"], help="Insert a file or a directory from disk to the luggage")
-        parser_insert_file.add_argument("file_or_dir_path")
-        parser_insert_file.add_argument("luggage_path")
-        parser_insert_file.set_defaults(func=insert_file_or_dir, luggage=luggage)
-
-        parser_move = command_subparsers.add_parser(
-            "fmove", aliases=["mv", "fmv"], help="Move and rename files")
-        parser_move.add_argument("source_virtual_path", help="Source existing file or dir in the luggage")
-        parser_move.add_argument("target_virtual_path", help="Destination path")
-        parser_move.set_defaults(func=move, luggage=luggage)
-
-        parser_delete = command_subparsers.add_parser(
-            "fdelete", aliases=["rm", "frm"], help="Delete dirs or files")
-        parser_delete.add_argument(
-            "virtual_path", help="Path to an existing file or directory, which is to be removed. "
-                                 "Dirs are removed recursively.")
-        parser_delete.set_defaults(func=delete, luggage=luggage)
-
-        parser_quit = command_subparsers.add_parser(
-            "quit", aliases=["exit"], help="Exit the Luggage prompt")
-        parser_quit.set_defaults(func=exit_luggage, luggage=luggage)
-
-        parser_help = command_subparsers.add_parser("help", help="Show this help")
-        parser_help.set_defaults(func=lambda options: command_parser.print_help(), luggage=luggage)
-
         index = 0
         speed = 1
         session = prompt_toolkit.PromptSession()
+        main = Main(luggage=luggage)
         while True:
             try:
                 prompt = "Luggage"
@@ -234,19 +288,21 @@ if __name__ == '__main__':
 
                 commands = shlex.split(
                     session.prompt(formatted_text, auto_suggest=prompt_toolkit.auto_suggest.AutoSuggestFromHistory()))
-                try:
-                    command_options = command_parser.parse_args(commands)
-                except SystemExit as ex:
+                if not commands:
                     continue
-                if command_options.command is None:
-                    continue
-
                 try:
-                    command_options.func(command_options)
-                except Exception as ex:
-                    raise ex
-                    print(f"{type(ex).__name__}: {ex}{'.' if not str(ex).endswith('.') else ''}")
-            except KeyboardInterrupt:
+                    r = main.fire(commands[0], *commands[1:])
+                except CommandNotFoundError:
+                    print(f"Command {commands[0]} not found.\nUsage:")
+                    main.print_help()
+                except KeyError as ex:
+                    print(f"Key {ex} not found.\nUsage:")
+                    main.print_help()
+                except TypeError as ex:
+                    print(f"{type(ex)}: {ex}")
+                    print()
+                    main.print_help()
+            except (KeyboardInterrupt, EOFError):
                 exit_luggage()
     finally:
         luggage.close()

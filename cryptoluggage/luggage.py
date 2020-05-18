@@ -581,8 +581,8 @@ class EncryptedFS(model.Dir):
         try:
             if relevant_subfolder:
                 for name, node in node.children.items():
-                    print(" " * (3 * (level)) + " |")
-                    self._print_node(node=node, level=level + 1, filter_string=filter_string)
+                    # print(" " * (3 * (level)) + " |")
+                    self._print_node(node=node, level=level + 1, filter_string=filter_string if filter_string != name else None)
         except AttributeError:
             pass
 

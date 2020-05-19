@@ -167,7 +167,7 @@ class SecretsDict(sortedcontainers.SortedDict):
         self.write_to_db(commit=True)
 
     def __delitem__(self, key):
-        super().__delattr__(key)
+        super().__delitem__(key)
         self.write_to_db(commit=True)
 
     def write_to_db(self, commit=True):
@@ -640,7 +640,7 @@ class EncryptedFS(model.Dir):
         target_dir = self.dir_from_parents(parent_names=parent_names, create=False)
         if not name:
             if target_dir is self.luggage.encrypted_fs.root:
-                raise BadPathException("Cannot delete the root")
+                raise BadPathException("Cannot delete_node the root")
             target = target_dir
         else:
             target = target_dir.children[name]

@@ -20,6 +20,7 @@ import cryptoluggage
 class CommandNotFoundError(Exception):
     pass
 
+
 class AutoFire:
     """Automatic CLI helper based on Google's fire.
     """
@@ -42,6 +43,7 @@ class AutoFire:
     def print_help(self, fun_name=None):
         """Print help.
         """
+        print("Usage:")
         fun_to_names = collections.defaultdict(list)
         for name, fun in self.name_to_fun.items():
             fun_to_names[fun].append(name)
@@ -64,10 +66,9 @@ class AutoFire:
             shown_doc = [line.strip() for line in (fun.__doc__.splitlines() if fun.__doc__ else "")]
             shown_doc = [l for l in shown_doc if l]
 
-            if fun_name is None:
+            if fun_name is None and shown_doc:
                 shown_doc[0] += (" ..." if len(shown_doc) > 1 else '')
                 shown_doc = shown_doc[:1]
-            
 
             shown_doc = "\n".join(shown_doc)
             print(('\t' if fun_name is None else '') + f"{', '.join(names)}({', '.join(shown_args)}):\n{shown_doc}")
@@ -77,6 +78,7 @@ class AutoFire:
         else:
             if fun_name is not None:
                 raise KeyError(fun_name)
+        print()
 
     name_to_fun["help"] = print_help
 
@@ -85,34 +87,18 @@ class AutoFire:
             fun = self.name_to_fun[command]
         except KeyError:
             raise CommandNotFoundError(command)
-        
         fun(self, *args)
-
-
-def parse_secret_name_or_index(luggage, param):
-    """Return a secret's name contained in the luggage.
-    If it denotes an existing file name, that name is returned.
-    If it doesn't and it is an integer, the name of the secret at that
-    position is returned. Otherwise, a KeyError exception is rised.
-    """
-    if not param in luggage.secrets:
-        try:
-            param = tuple(luggage.secrets.keys())[int(param)]
-        except (ValueError, KeyError, IndexError):
-            raise KeyError(param)
-    return param
 
 
 class Main(AutoFire):
     def __init__(self, luggage):
-        super().__init__()
         self.luggage = luggage
 
     @AutoFire.exported_function(["scat", "sprint"])
     def print_secret(self, secret_key):
         """Show the contents of a secret.
         """
-        secret_name = parse_secret_name_or_index(luggage=self.luggage, param=secret_key)
+        secret_name = self.parse_secret_name_or_index(param=secret_key)
         if secret_key != secret_name:
             print(f"Showing secret '{secret_name}':")
         print(self.luggage.secrets[secret_name])
@@ -123,7 +109,7 @@ class Main(AutoFire):
         If the name doesn't exist, a new one can be created.
         """
         try:
-            secret_name = parse_secret_name_or_index(luggage=self.luggage, param=secret_key)
+            secret_name = self.parse_secret_name_or_index(param=secret_key)
         except KeyError:
             secret_name = secret_key
         try:
@@ -170,7 +156,7 @@ class Main(AutoFire):
     @AutoFire.exported_function(["ecp"])
     def extract_file_or_dir(self, virtual_path, output_path):
         """Extract luggage's file at virtual_path into output_path in the disk.
-        This method does not delete the file in the luggage.
+        This method does not delete_node the file in the luggage.
         """
         self.luggage.encrypted_fs.export(
             virtual_path=virtual_path, output_path=output_path)
@@ -189,7 +175,7 @@ class Main(AutoFire):
         self.luggage.encrypted_fs.move(source_path=source_path, target_path=target_path)
 
     @AutoFire.exported_function(["frm", "rm"])
-    def delete(self, virtual_path):
+    def delete_node(self, virtual_path):
         """Delete virtual_path from the luggage's filesystem.
         If virtual_path is a directory, all descendents are deleted recursively.
         """
@@ -202,7 +188,7 @@ class Main(AutoFire):
 
         deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
         if str(deleting_nodes) == prompt_toolkit.prompt(
-                f"About to delete {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
+                f"About to delete_node {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
             del self.luggage.encrypted_fs[virtual_path]
             print(f"Deleted {target_node.path}.")
         else:
@@ -224,9 +210,12 @@ class Main(AutoFire):
                     f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
                 print("Typed text did not match. (Nothing was inserted nor overwriten)")
                 return
-
         for name, value in rows:
             self.luggage.secrets[name] = value
+
+    @AutoFire.exported_function(["srm", "rmsecret"])
+    def delete_secret(self, secret_name):
+        del self.luggage.secrets[self.parse_secret_name_or_index(secret_name)]
 
     @AutoFire.exported_function(["quit", "exit"])
     def exit_luggage(self):
@@ -234,6 +223,19 @@ class Main(AutoFire):
         """
         print("Bye")
         sys.exit(0)
+
+    def parse_secret_name_or_index(self, param):
+        """Return a secret's name contained in the luggage.
+        If it denotes an existing file name, that name is returned.
+        If it doesn't and it is an integer, the name of the secret at that
+        position is returned. Otherwise, a KeyError exception is rised.
+        """
+        if not param in self.luggage.secrets:
+            try:
+                param = tuple(self.luggage.secrets.keys())[int(param)]
+            except (ValueError, KeyError, IndexError):
+                raise KeyError(param)
+        return param
 
 
 def __main__():
@@ -246,8 +248,9 @@ def __main__():
 
     options = invocation_parser.parse_args()
     if options.command is None:
-        print("Error: Insufficient commands\n")
         invocation_parser.print_help()
+        print()
+        print("Error: Insufficient commands\n")
         sys.exit(-1)
     elif options.command == "open":
         passphrase = getpass.getpass("Passphrase: ")
@@ -293,17 +296,17 @@ def __main__():
             try:
                 r = main.fire(commands[0], *commands[1:])
             except CommandNotFoundError:
-                print(f"Command {commands[0]} not found.\nUsage:")
                 main.print_help()
+                print(f"Command {commands[0]} not found.")
             except KeyError as ex:
+                main.print_help()
                 print(f"Key {ex} not found.\nUsage:")
-                main.print_help()
             except TypeError as ex:
-                print(f"{type(ex)}: {ex}")
-                print()
                 main.print_help()
+                print(f"{type(ex)}: {ex}")
         except (KeyboardInterrupt, EOFError):
             main.exit_luggage()
+
 
 if __name__ == '__main__':
     __main__()

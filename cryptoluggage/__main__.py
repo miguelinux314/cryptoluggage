@@ -20,6 +20,10 @@ import cryptoluggage
 class CommandNotFoundError(Exception):
     pass
 
+class InvalidParametersError(Exception):
+    pass
+
+
 
 class AutoFire:
     """Automatic CLI helper based on Google's fire.
@@ -85,9 +89,11 @@ class AutoFire:
     def fire(self, command, *args):
         try:
             fun = self.name_to_fun[command]
+            fun(self, *args)
         except KeyError:
             raise CommandNotFoundError(command)
-        fun(self, *args)
+        except TypeError:
+            raise InvalidParametersError(command)
 
 
 class Main(AutoFire):
@@ -298,12 +304,15 @@ def __main__():
             except CommandNotFoundError:
                 main.print_help()
                 print(f"Command {commands[0]} not found.")
-            except KeyError as ex:
-                main.print_help()
-                print(f"Key {ex} not found.\nUsage:")
-            except TypeError as ex:
-                main.print_help()
-                print(f"{type(ex)}: {ex}")
+            except InvalidParametersError:
+                print(f"Invalid parameters for {commands[0]}.")
+            # except KeyError as ex:
+            #     main.print_help()
+            #     print(f"Key {ex} not found.\nUsage:")
+            # except TypeError as ex:
+            #     main.print_help()
+            #     print(f"{type(ex)}: {ex}")
+            #     raise ex
         except (KeyboardInterrupt, EOFError):
             main.exit_luggage()
 

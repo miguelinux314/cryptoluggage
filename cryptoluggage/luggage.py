@@ -8,6 +8,7 @@ __author__ = "Miguel Hernández Cabronero <miguel.hernandez@uab.cat>"
 __date__ = "08/02/2020"
 
 import os
+import fnmatch
 import base64
 import sqlite3
 import pickle
@@ -551,9 +552,15 @@ class EncryptedFS(model.Dir):
         """Print a list of all nodes contained in the filesystem"""
         nodes = self.root.get_descendents(get_files=True, get_dirs=True)
         if filter_string:
-            nodes = (n for n in nodes if filter_string in n.path)
-        root_node = next(nodes)
-        print(f"[{self.luggage.path}]")
+            nodes = (n for n in nodes if fnmatch.fnmatch(n.path, filter_string))
+
+        try:
+            root_node = next(nodes)
+            print(f"[{self.luggage.path}]")
+        except StopIteration:
+            print(f"No matches found for '{filter_string}'")
+            return
+
         for node in nodes:
             print(node.path)
 

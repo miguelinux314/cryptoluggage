@@ -14,7 +14,7 @@ with open(os.path.join(HERE, "README.md")) as fid:
 # This call to setup() does all the work
 setup(
     name="cryptoluggage",
-    version="3.0.0",
+    version="3.0.1",
     description="Cryptoluggage allows to keep encrypted secrets (e.g., passwords) and files",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -28,11 +28,8 @@ setup(
         "Operating System :: OS Independent",
     ],
     packages=["cryptoluggage"],
-    # package_data={"cryptoluggage": ["gui/*"]},
     include_package_data=True,
     python_requires='>=3.6',
-    install_requires=[
-        "cryptography", "filelock", "sortedcontainers", "prompt_toolkit"
-    ],
+    install_requires=["cryptography", "filelock", "sortedcontainers", "prompt_toolkit"],
     entry_points={"console_scripts": ["cl=cryptoluggage.__main__:__main__"]},
 )

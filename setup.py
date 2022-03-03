@@ -14,11 +14,11 @@ with open(os.path.join(HERE, "README.md")) as fid:
 # This call to setup() does all the work
 setup(
     name="cryptoluggage",
-    version="3.0.1",
+    version="3.0.3",
     description="Cryptoluggage allows to keep encrypted secrets (e.g., passwords) and files",
     long_description=README,
     long_description_content_type="text/markdown",
-    url="https://github.com/miguelinux314/cryptoluggage3",
+    url="https://github.com/miguelinux314/cryptoluggage",
     author="Miguel Hernández Cabronero",
     author_email="miguel.hernandez@uab.cat",
     license="MIT",

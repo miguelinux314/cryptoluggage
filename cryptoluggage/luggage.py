@@ -83,7 +83,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         if not data or data[0] != 0x80:
             raise BadPasswordOrCorruptedException()
 
-        h = HMAC(self._signing_key, hashes.SHA256(), backend=self._backend)
+        h = HMAC(self._signing_key, hashes.SHA256())
 
         h.update(data[:-32])
         try:
@@ -94,8 +94,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         iv = data[9:25]
         ciphertext = data[25:-32]
         decryptor = Cipher(
-            algorithms.AES(self._encryption_key), modes.CBC(iv), self._backend
-        ).decryptor()
+            algorithms.AES(self._encryption_key), modes.CBC(iv)).decryptor()
         plaintext_padded = decryptor.update(ciphertext)
         try:
             plaintext_padded += decryptor.finalize()
@@ -129,15 +128,14 @@ class LuggageFernet(cryptography.fernet.Fernet):
         padder = padding.PKCS7(algorithms.AES.block_size).padder()
         padded_data = padder.update(data) + padder.finalize()
         encryptor = Cipher(
-            algorithms.AES(self._encryption_key), modes.CBC(iv), self._backend
-        ).encryptor()
+            algorithms.AES(self._encryption_key), modes.CBC(iv)).encryptor()
         ciphertext = encryptor.update(padded_data) + encryptor.finalize()
 
         basic_parts = (
                 b"\x80" + struct.pack(">Q", current_time) + iv + ciphertext
         )
 
-        h = HMAC(self._signing_key, hashes.SHA256(), backend=self._backend)
+        h = HMAC(self._signing_key, hashes.SHA256())
         h.update(basic_parts)
         hmac = h.finalize()
 

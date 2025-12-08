@@ -126,8 +126,6 @@ class Main(AutoFire):
             print(line)
             match = re.match(rexp, line, re.IGNORECASE)
             if match:
-                print(f"{match.group(1)=}")
-
                 qr = qrcode.QRCode(version=7)
                 qr.add_data(match.group(1))
                 qr.make()

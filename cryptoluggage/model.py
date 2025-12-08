@@ -1,20 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Data model
+Data model (secrets, dirs, and files)
 """
 
 import os
 import datetime
 import sortedcontainers
-
-############################ Begin configurable part
-
-# Be verbose?
-be_verbose = True
-
-
-############################ End configurable part
 
 class Secret:
     """Secret stored in the Luggage

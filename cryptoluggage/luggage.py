@@ -7,16 +7,19 @@ cryptoluggage for python 3
 __author__ = "Miguel Hernández Cabronero <miguel.hernandez@uab.cat>"
 __date__ = "08/02/2020"
 
+import json
 import os
 import fnmatch
 import base64
 import sqlite3
 import pickle
+import sys
 import time
 import struct
 import filelock
 import sortedcontainers
 import string
+import io
 # Cryptography specific imports
 import cryptography.fernet
 from cryptography.exceptions import InvalidSignature
@@ -110,7 +113,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         return unpadded
 
     @classmethod
-    def key_from_password(cls, password, luggage_params):
+    def key_from_password(cls, password: str, luggage_params: "LuggageParams") -> bytes:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -145,15 +148,50 @@ class LuggageFernet(cryptography.fernet.Fernet):
 class LuggageParams:
     """Parameters employed in a Luggage
     """
+    default_salt_legth_bytes = 24
 
     def __init__(self, master_key_salt=None, master_key_iterations=1000000):
         """
         :param master_key_salt: salt used for deriving the master key. If none, os.urandom is called
         :param master_key_iterations: number of iterations used to derive the master key from a password
         """
-        self.master_key_salt = os.urandom(16) if master_key_salt is None else master_key_salt
+        self.master_key_salt = os.urandom(self.default_salt_legth_bytes) if master_key_salt is None else master_key_salt
         assert master_key_iterations > 0
         self.master_key_iterations = int(master_key_iterations)
+
+    def dumps(self) -> str:
+        """Return a serialized, plain-text version of the parameters.
+        """
+        return json.dumps({
+            # Convert the byte string (salt) to a Base64-encoded text string
+            "master_key_salt": base64.b64encode(self.master_key_salt).decode("utf-8"),
+            "master_key_iterations": self.master_key_iterations,
+        }).encode("utf-8")
+
+    @staticmethod
+    def loads(s: str, legacy: bool = False) -> "LuggageParams":
+        """Return a LuggageParams instance from a serialized output produced by dumps().
+        :param s: serialized parameter string as stored in the Luggage database.
+        :param legacy: if True, the string is unpickled instead of json-decoded (unsafe for tampered
+            Luggages, but required for Luggages created with cryptoluggage < 3.1.0)."""
+
+        if not legacy:
+            try:
+                param_dict = json.loads(s)
+            except (UnicodeDecodeError, json.JSONDecodeError) as ex:
+                print("There was an error decoding the Luggage parameters. "
+                      "If you are opening a Luggage created with version < 3.1.0, "
+                      "and you are ENTIRELY SURE the Luggage file has not been tampered with, "
+                      f"run again the open command with the --legacy option.\n\n\tDebug info: {ex}.")
+                sys.exit(1)
+            params = LuggageParams(
+                master_key_salt=base64.b64decode(param_dict["master_key_salt"]),
+                master_key_iterations=param_dict["master_key_iterations"],
+            )
+        else:
+            params = pickle.loads(s)
+
+        return params
 
 
 class SecretsDict(sortedcontainers.SortedDict):
@@ -197,8 +235,12 @@ class SecretsDict(sortedcontainers.SortedDict):
         for secrets_token, in cursor.execute(r"SELECT token FROM token_store"
                                              f" WHERE id={luggage.secrets_id:d}"):
             luggage._secrets = SecretsDict(luggage=luggage)
-            luggage._secrets.update(
-                pickle.loads(luggage.master_fernet.decrypt_binary(secrets_token)))
+            decrypted = luggage.master_fernet.decrypt_binary(secrets_token)
+            # Only allow dicts to be loaded
+            secrets_dict = restricted_loads(decrypted)
+            if not isinstance(secrets_dict, dict):
+                raise pickle.UnpicklingError("Loaded secrets is not a dict")
+            luggage._secrets.update(secrets_dict)
             return luggage._secrets
         else:
             raise ValueError(f"Could not find parameter entry "
@@ -219,7 +261,11 @@ class EncryptedFS(model.Dir):
         if root is None:
             for root_node_token, in cursor.execute(r"SELECT token FROM token_store"
                                                    f" WHERE id={self.luggage.root_folder_id:d}"):
-                self.root = pickle.loads(self.luggage.master_fernet.decrypt_binary(root_node_token))
+                decrypted = self.luggage.master_fernet.decrypt_binary(root_node_token)
+                root_obj = restricted_loads(decrypted)
+                if not isinstance(root_obj, model.Dir):
+                    raise pickle.UnpicklingError("Loaded root is not a Dir")
+                self.root = root_obj
                 break
             else:
                 raise BadPasswordOrCorruptedException(f"Could not find parameter entry id{self.secrets_id}.")
@@ -587,7 +633,8 @@ class EncryptedFS(model.Dir):
             if relevant_subfolder:
                 for name, node in node.children.items():
                     # print(" " * (3 * (level)) + " |")
-                    self._print_node(node=node, level=level + 1, filter_string=filter_string if filter_string != name else None)
+                    self._print_node(node=node, level=level + 1,
+                                     filter_string=filter_string if filter_string != name else None)
         except AttributeError:
             pass
 
@@ -683,24 +730,37 @@ class EncryptedFS(model.Dir):
 class Luggage:
     """Luggage (encrypted database for secrets and files).
     """
+    # Negative IDs are reserved for special entries. Non-negative IDs are for secret file contents.
     root_folder_id, secrets_id, params_id = range(-3, 0)
 
-    def __init__(self, path: str, passphrase: str):
-        """Open a luggage for the given password, generating a new one if
-        it does not exist.
+    def __init__(self, path: str, passphrase: str, legacy: bool = False):
+        """Open a luggage for the given passphrase, generating a new one if it does not exist.
+        :param path: path to the luggage file
+        :param passphrase: master passphrasse for the luggage (utf8 string)
+        :param legacy: if True, the Luggage parameters are open using pickle instead of json (unsafe for tampered
+          Luggages, but needed for Luggages created with cryptoluggage < 3.1.0).
         """
         self.path = path
         try:
             if not os.path.exists(self.path):
+                if legacy:
+                    print("Creating a new Luggage with the legacy format is not supported.")
+                    sys.exit(1)
                 self.create_new(path=self.path,
                                 passphrase=passphrase)
-            self.db_conn, self.master_fernet = self._open(passphrase=passphrase)
+            self.db_conn, self.master_fernet = self._open(passphrase=passphrase, legacy=legacy)
             existed_before = os.path.exists(self.lock_path)
             self.lock = filelock.FileLock(lock_file=self.lock_path)
             self.lock.acquire(timeout=0.1)
 
             # Force reading of DB to password check
             _ = self.secrets
+
+            # If opened in legacy mode, immediately save to upgrade to the new format
+            if legacy:
+                self._save_params(self.params, self.db_conn, db_cursor=None)
+                print("The Luggage has been updated to use the non-legacy format. "
+                      "You won't need to use the --legacy option again for this Luggage.")
         except filelock.Timeout as ex:
             if not existed_before:
                 try:
@@ -721,12 +781,15 @@ class Luggage:
             raise ex
 
     @classmethod
-    def create_new(cls, path, passphrase: str):
-        """Create a new Luggage (encrypted DB) at target_path for the given
-        master password.
-
-        :return: a Luggage instance
+    def create_new(cls, path, passphrase: str) -> "Luggage":
+        """Create a new Luggage (encrypted DB) at target_path for the given master password.
+        :return: the newly created Luggage instance
         """
+        if os.path.exists(path):
+            print(f"Luggage file {path} already exists. I refuse to overwrite it. "
+                  f"Delete manually if you want to proceed.")
+            sys.exit(1)
+
         try:
             os.remove(path)
         except FileNotFoundError:
@@ -741,12 +804,11 @@ class Luggage:
 
         # Parameters are public - no password
         luggage_params = LuggageParams()
-        c.execute(r"INSERT INTO token_store (id, token) VALUES (?, ?)",
-                  (cls.params_id, pickle.dumps(luggage_params)))
+        cls._save_params(luggage_params, db_conn=conn, db_cursor=c)
 
         # root and secrets are encrypted
-        master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
-            password=passphrase, luggage_params=luggage_params))
+        master_fernet = LuggageFernet(
+            key=LuggageFernet.key_from_password(password=passphrase, luggage_params=luggage_params))
         secrets = {}
         empty_root = model.Dir(name="__root__")
         for db_id, instance in ((cls.root_folder_id, empty_root),
@@ -779,10 +841,13 @@ class Luggage:
     def lock_path(self):
         return self.path + ".lock"
 
-    def _open(self, passphrase):
+    def _open(self, passphrase: str, legacy: bool = False):
         """Open the database, read the parameters and store the master fernet.
+        :param passphrase: master passphrasse for the luggage (utf8 string)
+        :param legacy: if True, the Luggage parameters are open using pickle instead of json (unsafe for tampered
+          Luggages, but needed for Luggages created with cryptoluggage < 3.1.0).
         :return: (conn, fernet), where conn is the database connection and fernet
-        is the master fernet to be used to decrypt the database.
+          is the master fernet to be used to decrypt the database.
         """
         conn = sqlite3.connect(self.path)
         c = conn.cursor()
@@ -790,7 +855,7 @@ class Luggage:
         # Load public params
         for params_dumps, in c.execute(r"SELECT token FROM token_store"
                                        f" WHERE id={self.params_id:d}"):
-            self.params = pickle.loads(params_dumps)
+            self.params = LuggageParams.loads(params_dumps, legacy=legacy)
             break
         else:
             raise ValueError(f"Could not find parameter entry id {self.params_id}")
@@ -799,6 +864,23 @@ class Luggage:
         master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
             password=passphrase, luggage_params=self.params))
         return conn, master_fernet
+
+    @classmethod
+    def _save_params(cls,
+                     luggage_params: LuggageParams,
+                     db_conn: sqlite3.Connection,
+                     db_cursor: sqlite3.Cursor = None):
+        """Save the Luggage parameters to the database. If db_cursor is not None, data are not commited.
+        Otherwise, db_conn is used to obtain a cursor and the changes are committed."""
+        commit = False
+        if db_cursor is None:
+            commit = True
+            db_cursor = db_conn.cursor()
+
+        db_cursor.execute(r"INSERT OR REPLACE INTO token_store (id, token) VALUES (?, ?)",
+                          (cls.params_id, luggage_params.dumps()))
+        if commit:
+            db_conn.commit()
 
     def close(self):
         self.db_conn, self.master_fernet = None, None
@@ -830,3 +912,41 @@ class Luggage:
             return x
         else:
             raise BadPasswordOrCorruptedException()
+
+
+class RestrictedUnpickler(pickle.Unpickler):
+    """Only allow loading of specific safe classes. This should prevent code execution even if the 
+    passphrase or key are compromised."""
+    allowed_classes = {
+        "SecretsDict": "cryptoluggage.luggage",
+        "Dir": "cryptoluggage.model",
+        "File": "cryptoluggage.model",
+        "dict": "builtins",
+        "list": "builtins",
+        "str": "builtins",
+        "int": "builtins",
+        "float": "builtins",
+        "set": "builtins",
+        "tuple": "builtins",
+        "SortedDict": "sortedcontainers.sorteddict",
+    }
+
+    def find_class(self, module, name):
+        if name in self.allowed_classes and module == self.allowed_classes[name]:
+            # Only allow explicitly whitelisted classes
+            if module == 'cryptoluggage.luggage' and name == 'SecretsDict':
+                return SecretsDict
+            if module == 'cryptoluggage.model' and name == 'Dir':
+                return model.Dir
+            if module == 'cryptoluggage.model' and name == 'File':
+                return model.File
+            # Builtins
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"WARNING! Found '{module}.{name}' when unpickling. This could mean that "
+            f"your passphrase was compromised and an attacker tampered with your Luggage.")
+
+
+def restricted_loads(data):
+    """Helper to load pickles with restricted classes."""
+    return RestrictedUnpickler(io.BytesIO(data)).load()

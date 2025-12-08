@@ -20,9 +20,9 @@ import cryptoluggage
 class CommandNotFoundError(Exception):
     pass
 
+
 class InvalidParametersError(Exception):
     pass
-
 
 
 class AutoFire:
@@ -249,6 +249,11 @@ def __main__():
     invocation_subparsers = invocation_parser.add_subparsers(dest="command")
     open_parser = invocation_subparsers.add_parser("open")
     open_parser.add_argument("luggage_path")
+    open_parser.add_argument(
+        "--legacy", action="store_true", default=False,
+        help="Open a Luggage created with version < 3.1.0. "
+             "UNSAFE! unless you are sure the Luggage has not been tampered with. "
+             "After opening in legacy mode, the Luggage will be upgraded to the new format.")
     create_parser = invocation_subparsers.add_parser("create")
     create_parser.add_argument("luggage_path")
 
@@ -261,7 +266,10 @@ def __main__():
     elif options.command == "open":
         passphrase = getpass.getpass("Passphrase: ")
         try:
-            luggage = cryptoluggage.Luggage(path=os.path.expanduser(options.luggage_path), passphrase=passphrase)
+            luggage = cryptoluggage.Luggage(
+                path=os.path.expanduser(options.luggage_path), 
+                passphrase=passphrase,
+                legacy=options.legacy)
         except cryptoluggage.BadPasswordOrCorruptedException:
             print(f"Cannot open {options.luggage_path}. Is the password OK?")
             sys.exit(-1)
@@ -269,8 +277,9 @@ def __main__():
         passphrase = getpass.getpass("Passphrase: ")
         confirmed_passphrase = getpass.getpass("Confirm passphrase: ")
         if passphrase == confirmed_passphrase:
-            luggage = cryptoluggage.Luggage.create_new(path=os.path.expanduser(options.luggage_path),
-                                                       passphrase=passphrase)
+            luggage = cryptoluggage.Luggage.create_new(
+                path=os.path.expanduser(options.luggage_path),
+                passphrase=passphrase)
         else:
             print("Passwords do not match. Try again.")
             sys.exit(-1)

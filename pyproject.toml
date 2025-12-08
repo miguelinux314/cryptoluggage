@@ -10,7 +10,8 @@ readme = "README.md"
 authors = [
     { name = "Miguel Hernández Cabronero", email = "miguel.hernandez@uab.cat" }
 ]
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.8"
 dependencies = [
     "cryptography",
@@ -20,7 +21,6 @@ dependencies = [
     "qrcode"
 ]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent"
 ]
@@ -30,4 +30,3 @@ Homepage = "https://github.com/miguelinux314/cryptoluggage"
 
 [project.scripts]
 cl = "cryptoluggage.__main__:__main__"
-

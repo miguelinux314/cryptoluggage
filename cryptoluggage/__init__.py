@@ -9,5 +9,9 @@ from .model import Secret
 from .model import Node
 from .model import File
 from .model import Dir
+import importlib.metadata
 
-__version__ = "3.1.0" # <<< Also update setup.py
+try:
+    __version__ = importlib.metadata.version("cryptoluggage")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"

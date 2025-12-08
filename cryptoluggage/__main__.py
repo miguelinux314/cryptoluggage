@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import sys
 import argparse
 import getpass
@@ -13,6 +14,8 @@ import prompt_toolkit.auto_suggest
 import csv
 import collections
 import inspect
+import qrcode
+from prompt_toolkit import print_formatted_text
 
 import cryptoluggage
 
@@ -47,7 +50,13 @@ class AutoFire:
     def print_help(self, fun_name=None):
         """Print help.
         """
-        print("Usage:")
+        print_formatted_text(prompt_toolkit.formatted_text.FormattedText([
+            ("", "You are using "),
+            ("bold", f"CryptoLuggage v{cryptoluggage.__version__}"),
+            ("", "."),
+            ("", " These are the available commands:\n" if fun_name is None else "\n"),
+        ]))
+
         fun_to_names = collections.defaultdict(list)
         for name, fun in self.name_to_fun.items():
             fun_to_names[fun].append(name)
@@ -69,20 +78,17 @@ class AutoFire:
 
             shown_doc = [line.strip() for line in (fun.__doc__.splitlines() if fun.__doc__ else "")]
             shown_doc = [l for l in shown_doc if l]
-
-            if fun_name is None and shown_doc:
-                shown_doc[0] += (" ..." if len(shown_doc) > 1 else '')
-                shown_doc = shown_doc[:1]
-
-            shown_doc = "\n".join(shown_doc)
-            print(('\t' if fun_name is None else '') + f"{', '.join(names)}({', '.join(shown_args)}):\n{shown_doc}")
+            shown_doc = " ".join(shown_doc)
+            print_formatted_text(prompt_toolkit.formatted_text.FormattedText([
+                ("bold", f"{', '.join(names)}({', '.join(shown_args)})"),
+                ("", f"\n{shown_doc}")
+            ]))
             print()
             if fun_name is not None:
                 break
         else:
             if fun_name is not None:
                 raise KeyError(fun_name)
-        print()
 
     name_to_fun["help"] = print_help
 
@@ -109,10 +115,27 @@ class Main(AutoFire):
             print(f"Showing secret '{secret_name}':")
         print(self.luggage.secrets[secret_name])
 
+    @AutoFire.exported_function(["qr"])
+    def print_secret_qr(self, secret_key):
+        """Show the contents of a secret and display a QR for all 'pass: <pass>' lines."""
+        secret_name = self.parse_secret_name_or_index(param=secret_key)
+        if secret_key != secret_name:
+            print(f"Showing secret '{secret_name}':")
+        rexp = r"\s*pass\s*:\s*(.+)\s*"
+        for line in self.luggage.secrets[secret_name].splitlines():
+            print(line)
+            match = re.match(rexp, line, re.IGNORECASE)
+            if match:
+                print(f"{match.group(1)=}")
+
+                qr = qrcode.QRCode(version=7)
+                qr.add_data(match.group(1))
+                qr.make()
+                qr.print_ascii(invert=True)
+
     @AutoFire.exported_function(["sset"])
     def write_secret(self, secret_key):
-        """Edit secret with name secret_key.
-        If the name doesn't exist, a new one can be created.
+        """Edit secret with name secret_key. If the name doesn't exist, a new one can be created.
         """
         try:
             secret_name = self.parse_secret_name_or_index(param=secret_key)
@@ -129,8 +152,7 @@ class Main(AutoFire):
 
     @AutoFire.exported_function(["sls", "slist"])
     def list_secrets(self, filter=None):
-        """List all secrets.
-        If filter is provided, only secrets that contain that string in the name are shown."""
+        """List all secrets. If filter is provided, only secrets that contain that string in the name are shown."""
         if not self.luggage.secrets:
             print("No secrets stored.")
             return
@@ -145,9 +167,7 @@ class Main(AutoFire):
 
     @AutoFire.exported_function(["tree"])
     def print_tree(self, filter=None):
-        """Print a tree representation of the stored files.
-        If filter is not None, only nodes containing that string in their paths
-        are shown.
+        """Print a tree representation of the stored files. If filter is not None, only nodes containing that string in their paths are shown.
         """
         self.luggage.encrypted_fs.print_tree(filter_string=filter)
 
@@ -221,12 +241,12 @@ class Main(AutoFire):
 
     @AutoFire.exported_function(["srm", "rmsecret"])
     def delete_secret(self, secret_name):
+        """Delete a secret from the luggage given its name or its index."""
         del self.luggage.secrets[self.parse_secret_name_or_index(secret_name)]
 
     @AutoFire.exported_function(["quit", "exit"])
     def exit_luggage(self):
-        """Exit.
-        """
+        """Close the current Luggage and exit."""
         print("Bye")
         sys.exit(0)
 
@@ -267,7 +287,7 @@ def __main__():
         passphrase = getpass.getpass("Passphrase: ")
         try:
             luggage = cryptoluggage.Luggage(
-                path=os.path.expanduser(options.luggage_path), 
+                path=os.path.expanduser(options.luggage_path),
                 passphrase=passphrase,
                 legacy=options.legacy)
         except cryptoluggage.BadPasswordOrCorruptedException:
@@ -309,19 +329,12 @@ def __main__():
             if not commands:
                 continue
             try:
-                r = main.fire(commands[0], *commands[1:])
+                main.fire(commands[0], *commands[1:])
             except CommandNotFoundError:
                 main.print_help()
                 print(f"Command {commands[0]} not found.")
             except InvalidParametersError:
                 print(f"Invalid parameters for {commands[0]}.")
-            # except KeyError as ex:
-            #     main.print_help()
-            #     print(f"Key {ex} not found.\nUsage:")
-            # except TypeError as ex:
-            #     main.print_help()
-            #     print(f"{type(ex)}: {ex}")
-            #     raise ex
         except (KeyboardInterrupt, EOFError):
             main.exit_luggage()
 

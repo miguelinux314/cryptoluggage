@@ -219,6 +219,16 @@ class Main(AutoFire):
                 return
         for name, value in rows:
             self.luggage.secrets[name] = value
+            
+    @AutoFire.exported_function(["esecrets", "es"])
+    def export_secret_csv(self, csv_path):
+        """Export all secrets into a non-encrypted CSV file.
+        The CSV will have two columns. The first column will contain keys and the second column 
+        will contain their values.
+        """
+        with open(os.path.expanduser(csv_path), "w") as secrets_file:
+            for name, value in sorted(self.luggage.secrets.items()):
+                secrets_file.write(f'"{name}","{value}"\n')
 
     @AutoFire.exported_function(["srm", "rmsecret"])
     def delete_secret(self, secret_name):

@@ -66,8 +66,9 @@ class AutoFire:
                 continue
             if fun_name is not None and not any(fun_name == n for n in names):
                 continue
-            shown_args = inspect.getfullargspec(fun)[0]
+            shown_args = list(inspect.getfullargspec(fun)[0])
             defaults = inspect.getfullargspec(fun)[3]
+
             if shown_args[0] == "self":
                 shown_args = shown_args[1:]
             for i, arg in enumerate(shown_args):

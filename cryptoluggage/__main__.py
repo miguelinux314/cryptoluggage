@@ -371,7 +371,8 @@ def __main__():
             except SecretNotFoundError as ex:
                 print(f"Secret {ex.secret_name!r} not found.")
             except InvalidParametersError:
-                print(f"Invalid parameters for {commands[0]}.")
+                print(f"Invalid parameters for command `{commands[0]}`.\n")
+                main.print_help(commands[0], show_version=False)
         except (KeyboardInterrupt, EOFError):
             main.exit_luggage()
 

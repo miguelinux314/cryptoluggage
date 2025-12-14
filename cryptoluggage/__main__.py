@@ -116,12 +116,21 @@ class Main(AutoFire):
         print(self.luggage.secrets[secret_name])
 
     @AutoFire.exported_function(["qr"])
-    def print_secret_qr(self, secret_key):
-        """Show the contents of a secret and display a QR for all 'pass: <pass>' lines."""
+    def print_secret_qr(self, secret_key, prefix="pass:"):
+        """Show the contents of a secret and display a QR for all '<prefix> <pass>' lines.
+        By default, prefix is 'pass:'."""
+        colon_warn_text = prompt_toolkit.formatted_text.FormattedText([
+            ("bold", "\nWarning: "),
+            ("", f"prefix usually contains a colon (:), yours doesn't ({prefix!r}).\n"),
+        ])
+        
+        if ":" not in prefix:
+            print_formatted_text(colon_warn_text)
+
         secret_name = self.parse_secret_name_or_index(param=secret_key)
         if secret_key != secret_name:
             print(f"Showing secret '{secret_name}':")
-        rexp = r"\s*pass\s*:\s*(.+)\s*"
+        rexp = r"\s*" + str(prefix.replace(" ", r"\s*")) + r"\s*(.+)\s*"
         for line in self.luggage.secrets[secret_name].splitlines():
             print(line)
             match = re.match(rexp, line, re.IGNORECASE)
@@ -130,6 +139,9 @@ class Main(AutoFire):
                 qr.add_data(match.group(1))
                 qr.make()
                 qr.print_ascii(invert=True)
+
+        if ":" not in prefix:
+            print_formatted_text(colon_warn_text)
 
     @AutoFire.exported_function(["sset"])
     def write_secret(self, secret_key):

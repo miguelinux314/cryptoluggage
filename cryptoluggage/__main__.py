@@ -201,6 +201,30 @@ class Main(AutoFire):
             if not matches_found:
                 print(f"No secrets found matching filter {filter!r}.")
 
+    @AutoFire.exported_function(["isecrets", "is"])
+    def import_secret_csv(self, csv_path):
+        """Import a CSV of secrets into the luggage.
+        The CSV must have at least two columns. The first column must contain keys
+        and the second column must contain their values.
+        """
+        with open(os.path.expanduser(csv_path), "r") as secrets_file:
+            rows = [r[:2] for r in list(csv.reader(secrets_file))]
+
+        secret_dict = {name: value for name, value in rows}
+        existing_secret_count = sum(1 for n in secret_dict.keys() if n in self.luggage.secrets)
+        if existing_secret_count:
+            if str(existing_secret_count) != prompt_toolkit.prompt(
+                    f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
+                print("Typed text did not match. (Nothing was inserted nor overwriten)")
+                return
+        for name, value in rows:
+            self.luggage.secrets[name] = value
+
+    @AutoFire.exported_function(["srm", "rmsecret"])
+    def delete_secret(self, secret_name):
+        """Delete a secret from the luggage given its name or its index."""
+        del self.luggage.secrets[self.parse_secret_name_or_index(secret_name)]
+
     @AutoFire.exported_function(["tree"])
     def print_tree(self, filter=None):
         """Print a tree representation of the stored files. If filter is not None, only nodes containing that string in their paths are shown.
@@ -274,30 +298,6 @@ class Main(AutoFire):
             print(f"Deleted {target_node.path}.")
         else:
             print("Typed text did not match. (Nothing was deleted)")
-
-    @AutoFire.exported_function(["isecrets", "is"])
-    def import_secret_csv(self, csv_path):
-        """Import a CSV of secrets into the luggage.
-        The CSV must have at least two columns. The first column must contain keys
-        and the second column must contain their values.
-        """
-        with open(os.path.expanduser(csv_path), "r") as secrets_file:
-            rows = [r[:2] for r in list(csv.reader(secrets_file))]
-
-        secret_dict = {name: value for name, value in rows}
-        existing_secret_count = sum(1 for n in secret_dict.keys() if n in self.luggage.secrets)
-        if existing_secret_count:
-            if str(existing_secret_count) != prompt_toolkit.prompt(
-                    f"About to overwrite {existing_secret_count} elements. Type {existing_secret_count} to confirm: "):
-                print("Typed text did not match. (Nothing was inserted nor overwriten)")
-                return
-        for name, value in rows:
-            self.luggage.secrets[name] = value
-
-    @AutoFire.exported_function(["srm", "rmsecret"])
-    def delete_secret(self, secret_name):
-        """Delete a secret from the luggage given its name or its index."""
-        del self.luggage.secrets[self.parse_secret_name_or_index(secret_name)]
 
     @AutoFire.exported_function(["quit", "exit"])
     def exit_luggage(self):
@@ -390,13 +390,11 @@ def __main__():
             try:
                 main.fire(commands[0], *commands[1:])
             except CommandNotFoundError:
-                main.print_help()
-                print(f"Command {commands[0]} not found.")
+                print(f"Unrecognized command {commands[0]!r}. Type 'help' to see available commands.")
             except SecretNotFoundError as ex:
                 print(f"Secret {ex.secret_name!r} not found.")
             except InvalidParametersError:
-                print(f"Invalid parameters for command `{commands[0]}`.\n")
-                main.print_help(commands[0], show_version=False)
+                print(f"Invalid parameters for command {commands[0]!r}.\nType 'help {commands[0]}' to see usage.")
         except (KeyboardInterrupt, EOFError):
             main.exit_luggage()
 

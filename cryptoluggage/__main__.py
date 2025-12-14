@@ -222,7 +222,7 @@ class Main(AutoFire):
             
     @AutoFire.exported_function(["esecrets", "es"])
     def export_secret_csv(self, csv_path):
-        """Export all secrets into a non-encrypted CSV file.
+        """Export all secrets into a unencrypted CSV file.
         The CSV will have two columns. The first column will contain keys and the second column 
         will contain their values.
         """

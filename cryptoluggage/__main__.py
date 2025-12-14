@@ -18,6 +18,7 @@ import qrcode
 from prompt_toolkit import print_formatted_text
 
 import cryptoluggage
+from cryptoluggage.luggage import BadPathException
 
 
 class CommandNotFoundError(Exception):
@@ -208,8 +209,12 @@ class Main(AutoFire):
         """Extract luggage's file at virtual_path into output_path in the disk.
         This method does not delete_node the file in the luggage.
         """
-        self.luggage.encrypted_fs.export(
-            virtual_path=virtual_path, output_path=output_path)
+        try:
+            self.luggage.encrypted_fs.export(
+                virtual_path=virtual_path, output_path=output_path)
+        except BadPathException:
+            print(f"Path {virtual_path!r} not found in the luggage (maybe a typo, or missing the parent folders?). "
+                  f"Nothing was extracted.")
 
     @AutoFire.exported_function(["icp"])
     def insert_file_or_dir(self, disk_path, virtual_path):

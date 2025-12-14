@@ -18,7 +18,7 @@ import qrcode
 from prompt_toolkit import print_formatted_text
 
 import cryptoluggage
-from cryptoluggage.luggage import BadPathException
+from cryptoluggage.luggage import BadPathException, OverwriteRefuseError
 
 
 class CommandNotFoundError(Exception):
@@ -54,15 +54,16 @@ class AutoFire:
 
         return import_function_wrapper
 
-    def print_help(self, fun_name=None):
+    def print_help(self, fun_name=None, show_version=True):
         """Print help.
         """
-        print_formatted_text(prompt_toolkit.formatted_text.FormattedText([
-            ("", "You are using "),
-            ("bold", f"CryptoLuggage v{cryptoluggage.__version__}"),
-            ("", "."),
-            ("", " These are the available commands:\n" if fun_name is None else "\n"),
-        ]))
+        if show_version:
+            print_formatted_text(prompt_toolkit.formatted_text.FormattedText([
+                ("", "You are using "),
+                ("bold", f"CryptoLuggage v{cryptoluggage.__version__}"),
+                ("", "."),
+                ("", " These are the available commands:\n" if fun_name is None else "\n"),
+            ]))
 
         fun_to_names = collections.defaultdict(list)
         for name, fun in self.name_to_fun.items():
@@ -221,7 +222,11 @@ class Main(AutoFire):
         """Insert a disk's file or directory into the luggage's filesystem at virtual_path.
         """
         disk_path = os.path.expanduser(disk_path)
-        self.luggage.encrypted_fs[virtual_path] = os.path.expanduser(disk_path)
+        try:
+            self.luggage.encrypted_fs[virtual_path] = os.path.expanduser(disk_path)
+        except OverwriteRefuseError:
+            print(f"Path {virtual_path!r} already exists in the luggage, refusing to overwrite. "
+                  f"You can use `rm {virtual_path}` to delete the existing file.")
 
     @AutoFire.exported_function(["mv", "fmv"])
     def move(self, source_path, target_path):
@@ -243,7 +248,8 @@ class Main(AutoFire):
 
         deleting_nodes = sum(1 for _ in target_node.get_descendents(get_files=True, get_dirs=True))
         if str(deleting_nodes) == prompt_toolkit.prompt(
-                f"About to delete_node {deleting_nodes} elements. Type {deleting_nodes} to confirm: "):
+                f"About to delete {deleting_nodes} element{'s' if deleting_nodes > 1 else ''}. "
+                f"Type {deleting_nodes} to confirm: "):
             del self.luggage.encrypted_fs[virtual_path]
             print(f"Deleted {target_node.path}.")
         else:

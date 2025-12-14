@@ -39,9 +39,19 @@ class RepeatedNameError(Exception):
 
 
 class BadPathException(Exception):
-    """Rasied when a path is not correct.
+    """Raised when a path is not correct.
     """
     pass
+
+
+class OverwriteRefuseError(Exception):
+    """Raised when an insertion is refused because it would overwrite
+    an existing file."""
+
+    def __init__(self, name, path):
+        super().__init__(f"Insertion of '{name}' into '{path}' refused: "
+                         f"a file or directory with that name already exists.")
+        self.name, self.path = name, path
 
 
 class LuggageInUseError(Exception):
@@ -293,7 +303,7 @@ class EncryptedFS(model.Dir):
         self.root.parent = new_value
 
     def insert_disk_file(self, virtual_path, file_or_path, cursor=None):
-        """Insert a file given its path or an open file with its contents.
+        """Insert a file from disk into the luggage's encrypted filesystem.
 
         :param virtual_path: a str-like object that points to a file in the Luggage's
           virtual (encrypted) filesystem or an existing dir. Example paths are:
@@ -310,16 +320,12 @@ class EncryptedFS(model.Dir):
           to the db, and changes are commited after insertion. If not None,
           this cursor is used and changes are NOT commited.
         """
-        target_dir, virtual_file_name = self.get_target_dir_and_name(target_path=virtual_path,
-                                                                     source_file_or_path=file_or_path)
+        target_dir, virtual_file_name = self.get_target_dir_and_name(
+            target_path=virtual_path, source_file_or_path=file_or_path)
 
         # Delete previous file if existing
-        try:
-            previous_file = target_dir.children[virtual_file_name]
-            # virtual_file_name = previous_file.name
-            del self[previous_file.path]
-        except KeyError:
-            pass
+        if virtual_file_name in target_dir.children:
+            raise OverwriteRefuseError(virtual_file_name, virtual_path)
 
         # Get file contents
         try:
@@ -395,7 +401,7 @@ class EncryptedFS(model.Dir):
         return target_dir, target_name
 
     def insert_disk_dir(self, virtual_path, dir_path):
-        """Recursively insert a directory into the luggage.
+        """Recursively insert an external directory into the luggage.
         """
         dir_path = os.path.abspath(dir_path)
 

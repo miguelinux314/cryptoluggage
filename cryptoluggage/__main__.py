@@ -24,6 +24,12 @@ class CommandNotFoundError(Exception):
     pass
 
 
+class SecretNotFoundError(Exception):
+    def __init__(self, secret_name):
+        super().__init__(f"Secret '{secret_name}' not found.")
+        self.secret_name = secret_name
+
+
 class InvalidParametersError(Exception):
     pass
 
@@ -268,13 +274,13 @@ class Main(AutoFire):
         """Return a secret's name contained in the luggage.
         If it denotes an existing file name, that name is returned.
         If it doesn't and it is an integer, the name of the secret at that
-        position is returned. Otherwise, a KeyError exception is rised.
+        position is returned. Otherwise, a SecretNotFoundError exception is raised.
         """
         if not param in self.luggage.secrets:
             try:
                 param = tuple(self.luggage.secrets.keys())[int(param)]
             except (ValueError, KeyError, IndexError):
-                raise KeyError(param)
+                raise SecretNotFoundError(param)
         return param
 
 
@@ -347,6 +353,8 @@ def __main__():
             except CommandNotFoundError:
                 main.print_help()
                 print(f"Command {commands[0]} not found.")
+            except SecretNotFoundError as ex:
+                print(f"Secret {ex.secret_name!r} not found.")
             except InvalidParametersError:
                 print(f"Invalid parameters for {commands[0]}.")
         except (KeyboardInterrupt, EOFError):

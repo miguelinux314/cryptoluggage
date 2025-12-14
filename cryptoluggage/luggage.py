@@ -845,6 +845,53 @@ class Luggage:
         conn.commit()
         return Luggage(path=path, passphrase=passphrase)
 
+    def change_passphrase(self, new_passphrase: str, params: LuggageParams = None):
+        """Change the luggage's master passphrase to new_passphrase.
+        :param new_passphrase: the new master passphrase
+        :param params: if not None, use these luggage parameters for the new passphrase.
+          Otherwise, the default parameters are used.
+        """
+        # Update the params
+        if params is None:
+            params = LuggageParams()
+        self._save_params(luggage_params=params, db_conn=self.db_conn)
+
+        old_master_fernet = self.master_fernet
+        new_master_fernet = LuggageFernet(
+            key=LuggageFernet.key_from_password(password=new_passphrase, luggage_params=params))
+
+        # Re-encrypt all entries except for the params_id (which is stored in plain text)
+        cursor = self.db_conn.cursor()
+        ids = [row[0] for row in cursor.execute("SELECT id FROM token_store").fetchall()]
+        for token_id in ids:
+            if token_id == self.params_id:
+                continue
+
+            # Load existing blob
+            cur = self.db_conn.cursor()
+            cur.execute("SELECT token FROM token_store WHERE id=?", (token_id,))
+            row = cur.fetchone()
+            if row is None:
+                continue
+            old_blob = row[0]
+
+            # Decrypt with old master fernet
+            try:
+                decrypted = old_master_fernet.decrypt_binary(old_blob)
+            except Exception as ex:
+                # If decryption fails, surface a clear error
+                raise BadPasswordOrCorruptedException(f"Failed to decrypt token id {token_id}: {ex}")
+
+            # Encrypt with the new master fernet
+            new_blob = new_master_fernet.encrypt_binary(decrypted)
+
+            # Update the token in the DB
+            cursor.execute("UPDATE token_store SET token=? WHERE id=?", (new_blob, token_id))
+
+        # Commit all updates and switch to the new master fernet
+        self.db_conn.commit()
+        self.master_fernet = new_master_fernet
+
     @property
     def secrets(self):
         try:

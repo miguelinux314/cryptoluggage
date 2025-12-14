@@ -309,6 +309,22 @@ class Main(AutoFire):
         else:
             print("Typed text did not match. (Nothing was deleted)")
 
+    @AutoFire.exported_function(["passwd"])
+    def change_password(self):
+        """Change the luggage's passphrase."""
+        print("You are about to change the luggage's passphrase. "
+              "It is recommended you back up your original luggage first "
+              "(this tool will not do it for you).")
+        new_passphrase = getpass.getpass(prompt="New passphrase: ")
+        confirm_passphrase = getpass.getpass(prompt="Repeat new passphrase: ")
+        if new_passphrase != confirm_passphrase:
+            print("Passwords do not match. Try again.")
+            return
+        
+        self.luggage.change_passphrase(new_passphrase)
+        
+        print("Passphrase changed successfully.")
+
     @AutoFire.exported_function(["quit", "exit"])
     def exit_luggage(self):
         """Close the current Luggage and exit."""

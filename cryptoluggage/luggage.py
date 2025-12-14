@@ -640,7 +640,7 @@ class EncryptedFS(model.Dir):
         if node is not self.root or self.luggage.encrypted_fs.root is not self.root:
             if filter_string is None or filter_string in node.name or relevant_subfolder:
                 if hasattr(node, "children"):
-                    lbracket, rbracket = "[", "]"
+                    lbracket, rbracket = "[", "/]"
                 else:
                     lbracket, rbracket = "--", " "
                 print(s + f"{lbracket}{node.name}{rbracket}")

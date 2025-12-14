@@ -3,19 +3,21 @@
 """Cryptoluggage's entry point
 """
 
-import os
-import re
-import sys
 import argparse
+import collections
+import csv
 import getpass
-import shlex
+import inspect
+import os
 import prompt_toolkit
 import prompt_toolkit.auto_suggest
-import csv
-import collections
-import inspect
-import qrcode
 from prompt_toolkit import print_formatted_text
+import qrcode
+import re
+import shlex
+import shutil
+import sys
+import textwrap
 
 import cryptoluggage
 from cryptoluggage.luggage import BadPathException, OverwriteRefuseError
@@ -87,8 +89,12 @@ class AutoFire:
                 except IndexError:
                     pass
 
-            shown_doc = [line.strip() for line in (fun.__doc__.splitlines() if fun.__doc__ else "")]
-            shown_doc = [l for l in shown_doc if l]
+            doc = inspect.getdoc(fun) or ""
+            if doc:
+                shown_doc = " ".join(line.strip() for line in doc.splitlines() if line.strip())
+            else:
+                shown_doc = ""
+
             format_text_tuples = []
             for name in names:
                 format_text_tuples.append(("bold", f"{name} "))
@@ -96,7 +102,8 @@ class AutoFire:
                 format_text_tuples.append(("", "\n"))
             format_text_tuples = format_text_tuples[:-1]  # Remove last \n
             print_formatted_text(prompt_toolkit.formatted_text.FormattedText(format_text_tuples))
-            print(" ".join(shown_doc))
+            if shown_doc:
+                print(textwrap.fill(shown_doc, width=shutil.get_terminal_size().columns))
             print()
             if fun_name is not None:
                 break
@@ -332,7 +339,11 @@ def __main__():
         print("Error: Insufficient commands\n")
         sys.exit(-1)
     elif options.command == "open":
-        passphrase = getpass.getpass("Passphrase: ")
+        try:
+            passphrase = getpass.getpass("Passphrase: ")
+        except KeyboardInterrupt:
+            print()
+            sys.exit(-1)
         try:
             luggage = cryptoluggage.Luggage(
                 path=os.path.expanduser(options.luggage_path),

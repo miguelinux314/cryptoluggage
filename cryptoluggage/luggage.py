@@ -320,12 +320,14 @@ class EncryptedFS(model.Dir):
           to the db, and changes are commited after insertion. If not None,
           this cursor is used and changes are NOT commited.
         """
-        target_dir, virtual_file_name = self.get_target_dir_and_name(
+        target_dir, target_name = self.get_target_dir_and_name(
             target_path=virtual_path, source_file_or_path=file_or_path)
 
         # Delete previous file if existing
-        if virtual_file_name in target_dir.children:
-            raise OverwriteRefuseError(virtual_file_name, virtual_path)
+        if target_name in target_dir.children:
+            raise OverwriteRefuseError(
+                target_name,
+                os.path.join(target_dir.path, target_name))
 
         # Get file contents
         try:
@@ -342,7 +344,7 @@ class EncryptedFS(model.Dir):
         file_cursor = self.luggage.db_conn.cursor() if cursor is None else cursor
         file_cursor.execute(r"INSERT INTO token_store (token) VALUES (?)",
                             (self.luggage.master_fernet.encrypt_binary(data=contents),))
-        new_file = model.File(name=virtual_file_name, parent=target_dir, token_id=file_cursor.lastrowid)
+        new_file = model.File(name=target_name, parent=target_dir, token_id=file_cursor.lastrowid)
         target_dir.children[new_file.name] = new_file
         self._replace_root_dumps(cursor=file_cursor, commit=cursor is None)
 
@@ -363,40 +365,31 @@ class EncryptedFS(model.Dir):
         :return: target_dir, target_name; where target_dir is a :class:`model.Dir` instance
           and target_name is the name that should be used for the contents of insert source_file_or_path
         """
-        # Process target path
+        # Initially assume that target_path points to a file in the luggage   
         virtual_parent_names, target_name = self.split_path(target_path)
 
-        try:
-            target_name = target_name if target_name else os.path.basename(source_file_or_path)
-            if not target_name:
-                raise BadPathException("Cannot determine input file name")
-        except TypeError as ex:
-            raise BadPathException("Cannot insert an open file into a folder path - ") from ex
+        # If the target_path is the root, the target_dir and name are trivial
+        if not target_name:
+            return self.root, os.path.basename(source_file_or_path)
 
-        try:
-            target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=create)
-        except BadPathException as ex:
-            raise BadPathException(
-                f"Cannot insert contents inside a non-directory ({source_file_or_path} -> {target_path})")
+        # Initially set target dir to the parent of target_path (creating if necessary)
+        target_dir = self.dir_from_parents(parent_names=virtual_parent_names, create=create)
 
-        if target_name in target_dir.children:
-            target_dir = target_dir.children[target_name]
-            # try:
-            #     target_name = os.path.basename(source_file_or_path)
-            #     if not target_name:
-            #         raise BadPathException("Cannot determine input file name")
-            # except TypeError:
-            #     raise BadPathException("Cannot insert an open file into a folder path - ") from ex
-            try:
-                if target_name in target_dir.children:
-                    try:
-                        target_dir.children[target_name].children
-                        raise BadPathException(
-                            f"Cannot overwrite existing dir {target_dir.children[target_name].path} with a file {source_file_or_path}")
-                    except AttributeError:
-                        pass
-            except AttributeError:
-                target_dir = target_dir.parent
+        # If the target_path is an existing dir, set that to the target_dir but make the target_name 
+        # The name of the source file or path
+        try:
+            if target_name in target_dir.children:
+                target_dir = target_dir.children[target_name]
+                target_name = os.path.basename(source_file_or_path)
+        except AttributeError:
+            # It is not a dir, no modification is needed
+            raise OverwriteRefuseError(target_dir.name, target_dir.path)
+
+        # Ensure the destination is a dir
+        try:
+            _ = target_dir.children
+        except AttributeError:
+            raise OverwriteRefuseError(target_dir.name, target_dir.path)
 
         return target_dir, target_name
 
@@ -476,6 +469,20 @@ class EncryptedFS(model.Dir):
         source_node = self.get_node(virtual_path=source_path)
         try:
             target_node = self.get_node(virtual_path=target_path)
+
+            # Refuse to overwrite existing files and into its own subdirs
+            try:
+                _ = target_node.children
+                if any(child == source_node.name for child in target_node.children):
+                    raise OverwriteRefuseError(source_path, os.path.join(target_path, source_node.name))
+                current_node = target_node
+                while current_node.parent is not None:
+                    if current_node.parent is source_node:
+                        raise BadPathException(f"Cannot move {source_path!r} into its own subdirectory {target_path!r}")
+                    current_node = current_node.parent
+            except AttributeError:
+                raise OverwriteRefuseError(source_path, target_path)
+
             if source_node is target_node:
                 raise BadPathException(f"Cannot move {source_path} to itself")
             # Moving to an existing path
@@ -614,7 +621,7 @@ class EncryptedFS(model.Dir):
         for node in nodes:
             if filter_string is None or fnmatch.fnmatch(node.name.lower(), f"*{filter_string.lower()}*"):
                 match_found = True
-                print(node.path)
+                print(node.path + ("" if not hasattr(node, "children") else "/"))
         if not match_found and filter_string is not None:
             print(f"No secret file found matching filter '{filter_string}'.")
 

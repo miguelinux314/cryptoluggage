@@ -227,15 +227,25 @@ class Main(AutoFire):
         disk_path = os.path.expanduser(disk_path)
         try:
             self.luggage.encrypted_fs[virtual_path] = os.path.expanduser(disk_path)
-        except OverwriteRefuseError:
-            print(f"Path {virtual_path!r} already exists in the luggage, refusing to overwrite. "
-                  f"You can use `rm {virtual_path}` to delete the existing file.")
+        except OverwriteRefuseError as ex:
+            print(f"Path {ex.path!r} already exists in the luggage, refusing to overwrite. "
+                  f"You can use `rm {ex.path}` to delete the existing file.")
+        except BadPathException as ex:
+            print(f"Error inserting {disk_path!r} into the luggage: {ex}.")
 
     @AutoFire.exported_function(["mv", "fmv"])
     def move(self, source_path, target_path):
         """Move source_path into target_path in the luggage's filesystem.
         """
-        self.luggage.encrypted_fs.move(source_path=source_path, target_path=target_path)
+        try:
+            self.luggage.encrypted_fs.move(source_path=source_path, target_path=target_path)
+        except KeyError as ex:
+            print(f"Error moving file: {ex} not found in the luggage.")
+        except BadPathException as ex:
+            print(f"Error moving file: {ex}.")
+        except OverwriteRefuseError as ex:
+            print(f"Error moving file: destination already exists and overwriting is refused. "
+                  f"You can delete the destination first with `rm {ex.path}`.")
 
     @AutoFire.exported_function(["frm", "rm"])
     def delete_node(self, virtual_path):

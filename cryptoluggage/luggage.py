@@ -337,7 +337,12 @@ class EncryptedFS(model.Dir):
             try:
                 contents = file_or_path.read()
             except AttributeError:
-                raise ValueError(f"right value of type {type(file_or_path)} not valid")
+                if os.path.islink(file_or_path) and not os.path.exists(file_or_path):
+                    print(f"Warning: found broken link {file_or_path!r} "
+                          f"-> {os.path.realpath(file_or_path)!r}. Skipping.")
+                    return
+                else:
+                    raise ValueError(f"right value of type {type(file_or_path)} not valid")
         except PermissionError:
             raise BadPathException(f"The target path {file_or_path!r} cannot be read due to permission errors.")
         assert contents is not None
@@ -400,7 +405,7 @@ class EncryptedFS(model.Dir):
         """
         dir_path = os.path.abspath(dir_path)
 
-        for dirpath, _, filenames in os.walk(dir_path):
+        for dirpath, _, filenames in os.walk(dir_path, followlinks=True):
             dirpath = os.path.abspath(dirpath)
             target_dir_path = os.path.join(
                 os.sep, virtual_path,

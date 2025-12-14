@@ -338,6 +338,8 @@ class EncryptedFS(model.Dir):
                 contents = file_or_path.read()
             except AttributeError:
                 raise ValueError(f"right value of type {type(file_or_path)} not valid")
+        except PermissionError:
+            raise BadPathException(f"The target path {file_or_path!r} cannot be read due to permission errors.")
         assert contents is not None
 
         # Store new token
@@ -699,8 +701,10 @@ class EncryptedFS(model.Dir):
             self.insert_disk_file(virtual_path=virtual_path, file_or_path=value)
         elif os.path.isdir(value):
             self.insert_disk_dir(virtual_path=virtual_path, dir_path=value)
+        elif not os.path.exists(value):
+            raise BadPathException(f"Path {value!r} does not exist on disk")
         else:
-            raise ValueError(f"Invalid assignment ({value}). Must be a file/filepath or a dirpath")
+            raise ValueError(f"Invalid assignment ({value}). Must be an existing file, filepath or dirpath")
 
     def __delitem__(self, key):
         """Delete a file or a dir, recursively in the latter case

@@ -89,11 +89,14 @@ class AutoFire:
 
             shown_doc = [line.strip() for line in (fun.__doc__.splitlines() if fun.__doc__ else "")]
             shown_doc = [l for l in shown_doc if l]
-            shown_doc = " ".join(shown_doc)
-            print_formatted_text(prompt_toolkit.formatted_text.FormattedText([
-                ("bold", f"{', '.join(names)}({', '.join(shown_args)})"),
-                ("", f"\n{shown_doc}")
-            ]))
+            format_text_tuples = []
+            for name in names:
+                format_text_tuples.append(("bold", f"{name} "))
+                format_text_tuples.append(("bold", " ".join(f"<{arg}>" for arg in shown_args)))
+                format_text_tuples.append(("", "\n"))
+            format_text_tuples = format_text_tuples[:-1]  # Remove last \n
+            print_formatted_text(prompt_toolkit.formatted_text.FormattedText(format_text_tuples))
+            print(" ".join(shown_doc))
             print()
             if fun_name is not None:
                 break

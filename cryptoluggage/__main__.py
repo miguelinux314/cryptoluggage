@@ -181,9 +181,13 @@ class Main(AutoFire):
                 print(f"[{i}] {secret_name}")
         else:
             filter = filter.lower()
+            matches_found = False
             for i, secret_name in enumerate(self.luggage.secrets):
                 if filter in secret_name.lower():
                     print(f"[{i}] {secret_name}")
+                    matches_found = True
+            if not matches_found:
+                print(f"No secrets found matching filter {filter!r}.")
 
     @AutoFire.exported_function(["tree"])
     def print_tree(self, filter=None):

@@ -595,18 +595,22 @@ class EncryptedFS(model.Dir):
     def print_node_list(self, filter_string=None):
         """Print a list of all nodes contained in the filesystem"""
         nodes = self.root.get_descendents(get_files=True, get_dirs=True)
-        if filter_string:
-            nodes = (n for n in nodes if fnmatch.fnmatch(n.path, filter_string))
 
         try:
-            root_node = next(nodes)
+            # Get and show the root
+            _ = next(nodes)
             print(f"[{self.luggage.path}]")
         except StopIteration:
-            print(f"No matches found for '{filter_string}'")
-            return
+            raise RuntimeError(f"Error getting the root of the encrypted filesystem of {self.luggage.path}. "
+                               f"Something is very wrong )-:")
 
+        match_found = False
         for node in nodes:
-            print(node.path)
+            if filter_string is None or fnmatch.fnmatch(node.name.lower(), f"*{filter_string.lower()}*"):
+                match_found = True
+                print(node.path)
+        if not match_found and filter_string is not None:
+            print(f"No secret file found matching filter '{filter_string}'.")
 
     def print_tree(self, filter_string=None):
         """Print the filesystem hierarchy as a tree

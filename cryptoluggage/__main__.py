@@ -72,7 +72,9 @@ class AutoFire:
                 shown_args = shown_args[1:]
             for i, arg in enumerate(shown_args):
                 try:
-                    shown_args[i] = f"{shown_args[i]}{'=' + str(defaults[i]) if defaults else ''}"
+                    shown_args[i] = f"{shown_args[i]}"
+                    if defaults and i >= len(shown_args) - len(defaults):
+                        shown_args[i] += f"={defaults[i - (len(shown_args) - len(defaults))]!r}"
                 except IndexError:
                     pass
 
@@ -118,14 +120,13 @@ class Main(AutoFire):
     @AutoFire.exported_function(["qr"])
     def print_secret_qr(self, secret_key, prefix="pass:"):
         """Show the contents of a secret and display a QR for all '<prefix> <pass>' lines.
-        By default, prefix is 'pass:'."""
+        By default, prefix is 'pass:'. Spaces between the prefix and the pass, and all spaces after the pass
+        are automatically ignored."""
         colon_warn_text = prompt_toolkit.formatted_text.FormattedText([
-            ("bold", "\nWarning: "),
-            ("", f"prefix usually contains a colon (:), yours doesn't ({prefix!r}).\n"),
+            ("bold", "Warning: "),
+            ("", f"prefix usually contains a colon (:), but yours doesn't ({prefix!r}) "
+                 f"and the qr contains a possibly spurious colon as prefix."),
         ])
-        
-        if ":" not in prefix:
-            print_formatted_text(colon_warn_text)
 
         secret_name = self.parse_secret_name_or_index(param=secret_key)
         if secret_key != secret_name:
@@ -138,10 +139,12 @@ class Main(AutoFire):
                 qr = qrcode.QRCode(version=7)
                 qr.add_data(match.group(1))
                 qr.make()
-                qr.print_ascii(invert=True)
 
-        if ":" not in prefix:
-            print_formatted_text(colon_warn_text)
+                if ":" not in prefix and match.group(1).strip().startswith(":"):
+                    print_formatted_text(colon_warn_text)
+                qr.print_ascii(invert=True)
+                if ":" not in prefix and match.group(1).strip().startswith(":"):
+                    print_formatted_text(colon_warn_text)
 
     @AutoFire.exported_function(["sset"])
     def write_secret(self, secret_key):

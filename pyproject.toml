@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cryptoluggage"
-version = "3.1.4-dev"
+version = "3.1.4"
 description = "Cryptoluggage allows to keep encrypted secrets (e.g., passwords) and files"
 readme = "README.md"
 authors = [

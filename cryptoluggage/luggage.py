@@ -425,7 +425,7 @@ class EncryptedFS(model.Dir):
         output_path = os.path.realpath(os.path.expanduser(output_path))
         while virtual_path and virtual_path[0] == os.sep:
             virtual_path = virtual_path[1:]
-        print(f"Exporting {virtual_path} into {output_path}...")
+        print(f"Exporting {virtual_path or '/'} into {output_path}...")
         try:
             contents = self[virtual_path]
             if hasattr(contents, "children"):

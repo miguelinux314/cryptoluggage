@@ -3,6 +3,7 @@
 ## v3.1.4 - Current development version
 
 - Added comprehensive documentation into the README.md file.
+- Added the `passgen` command to generate strong passwords.
 - The `ls` and `tree` commands now filter based on the full path, not just the filename.
 - The `qr` command is now aware of invalid usage (too many parameters).
 

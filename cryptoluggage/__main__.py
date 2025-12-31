@@ -14,8 +14,10 @@ import prompt_toolkit.auto_suggest
 from prompt_toolkit import print_formatted_text
 import qrcode
 import re
+import secrets
 import shlex
 import shutil
+import string
 import sys
 import textwrap
 
@@ -134,7 +136,7 @@ class Main(AutoFire):
         if args:
             # Accept spaces in secret names
             secret_key = " ".join((secret_key,) + args)
-            
+
         secret_name = self.parse_secret_name_or_index(param=secret_key)
         if secret_key != secret_name:
             print(f"Showing secret '{secret_name}':")
@@ -149,7 +151,7 @@ class Main(AutoFire):
             print("Error: Too many parameters for qr command. Note that the `qr` command does not accept spaces "
                   "in secret names. Use quotes (\") or apostrophes (') if your secret name contains spaces.")
             return
-        
+
         colon_warn_text = prompt_toolkit.formatted_text.FormattedText([
             ("bold", "Warning: "),
             ("", f"prefix usually contains a colon (:), but yours doesn't ({prefix!r}) "
@@ -181,7 +183,7 @@ class Main(AutoFire):
         if args:
             # Accept spaces in secret names
             secret_key = " ".join((secret_key,) + args)
-        
+
         try:
             secret_name = self.parse_secret_name_or_index(param=secret_key)
         except SecretNotFoundError as ex:
@@ -232,7 +234,7 @@ class Main(AutoFire):
                 return
         for name, value in rows:
             self.luggage.secrets[name] = value
-            
+
     @AutoFire.exported_function(["esecrets", "es"])
     def export_secret_csv(self, csv_path):
         """Export all secrets into a unencrypted CSV file.
@@ -249,7 +251,7 @@ class Main(AutoFire):
         if args:
             # Accept spaces in secret names
             secret_key = " ".join((secret_key,) + args)
-        
+
         del self.luggage.secrets[self.parse_secret_name_or_index(secret_key)]
 
     @AutoFire.exported_function(["tree"])
@@ -337,10 +339,30 @@ class Main(AutoFire):
         if new_passphrase != confirm_passphrase:
             print("Passwords do not match. Try again.")
             return
-        
+
         self.luggage.change_passphrase(new_passphrase)
-        
         print("Passphrase changed successfully.")
+
+    @AutoFire.exported_function(["passgen"])
+    def generate_password(self, length: int = 32, alphabet_type: str = "full") -> str:
+        """Generate and print a random password of given length and type.
+        :param length: number of characters in the generated password.
+        :param alphabet_type: Password alphabet, i.e., the characters allowed in it. Can be one of:
+        'full' (all printable characters normally accepted by password fields 
+            - 80 characters, or about 6.32 bits of entropy),
+        'alpha' (only letters and digits - 62 characters, or about 5.95 bits of entropy).
+        """
+        length = int(length)
+        alphabet_type = alphabet_type.strip().lower()
+        if alphabet_type == "full":
+            alphabet = r"!@#$%^&*()-_=+[]{}" + string.ascii_letters + string.digits
+        elif alphabet_type == "alpha":
+            alphabet = string.ascii_letters + string.digits
+        else:
+            raise InvalidParametersError(
+                f"Unrecognized password type {type!r}. Supported types are 'full' and 'alpha'.")
+        password = ''.join(secrets.choice(alphabet) for _ in range(length))
+        print(f"pass: {password}")
 
     @AutoFire.exported_function(["quit", "exit"])
     def exit_luggage(self):

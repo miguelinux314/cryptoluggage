@@ -128,9 +128,13 @@ class Main(AutoFire):
         self.luggage = luggage
 
     @AutoFire.exported_function(["scat", "sprint"])
-    def print_secret(self, secret_key):
+    def print_secret(self, secret_key, *args):
         """Show the contents of a secret.
         """
+        if args:
+            # Accept spaces in secret names
+            secret_key = " ".join((secret_key,) + args)
+            
         secret_name = self.parse_secret_name_or_index(param=secret_key)
         if secret_key != secret_name:
             print(f"Showing secret '{secret_name}':")
@@ -166,9 +170,13 @@ class Main(AutoFire):
                     print_formatted_text(colon_warn_text)
 
     @AutoFire.exported_function(["sset"])
-    def write_secret(self, secret_key):
+    def write_secret(self, secret_key, *args):
         """Edit secret with name secret_key. If the name doesn't exist, a new one can be created.
         """
+        if args:
+            # Accept spaces in secret names
+            secret_key = " ".join((secret_key,) + args)
+        
         try:
             secret_name = self.parse_secret_name_or_index(param=secret_key)
         except SecretNotFoundError as ex:
@@ -231,9 +239,13 @@ class Main(AutoFire):
                 secrets_file.write(f'"{name}","{value}"\n')
 
     @AutoFire.exported_function(["srm", "rmsecret"])
-    def delete_secret(self, secret_name):
+    def delete_secret(self, secret_key, *args):
         """Delete a secret from the luggage given its name or its index."""
-        del self.luggage.secrets[self.parse_secret_name_or_index(secret_name)]
+        if args:
+            # Accept spaces in secret names
+            secret_key = " ".join((secret_key,) + args)
+        
+        del self.luggage.secrets[self.parse_secret_name_or_index(secret_key)]
 
     @AutoFire.exported_function(["tree"])
     def print_tree(self, filter=None):

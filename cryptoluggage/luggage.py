@@ -626,7 +626,7 @@ class EncryptedFS(model.Dir):
 
         match_found = False
         for node in nodes:
-            if filter_string is None or fnmatch.fnmatch(node.name.lower(), f"*{filter_string.lower()}*"):
+            if filter_string is None or fnmatch.fnmatch(node.path.lower(), f"*{filter_string.lower()}*"):
                 match_found = True
                 print(node.path + ("" if not hasattr(node, "children") else "/"))
         if not match_found and filter_string is not None:
@@ -645,7 +645,7 @@ class EncryptedFS(model.Dir):
                               or any(filter_string in d.name for d in node.get_all_descendents()))
 
         if node is not self.root or self.luggage.encrypted_fs.root is not self.root:
-            if filter_string is None or filter_string in node.name or relevant_subfolder:
+            if filter_string is None or filter_string.lower() in node.path.lower() or relevant_subfolder:
                 if hasattr(node, "children"):
                     lbracket, rbracket = "[", "/]"
                 else:

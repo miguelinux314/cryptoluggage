@@ -152,6 +152,25 @@ Then use the `qr` command to display the QR code (using a screenshot here to sho
 
 ![QR screenshot](doc/qr_screenshot.png)
 
+### Generate a strong password
+
+You can use the `passgen <length=32> <type='full'>` command to generate a strong random password 
+of the specified length and type. The generated password is simply displayed on the screen (you can then
+copy it and paste it wherever you need it, e.g., into a new secret using `sset`).
+
+Example:
+
+```
+◐ Luggage ◑ passgen
+pass: m8WjV&^!9*3Wi9@ERUWnJmVSGlu={6p9
+
+◐ Luggage ◑ passgen 64
+pass: $ByC]8D)S5g&W0^N{o7q=@+h]=sd*2_dJ4DqIyf#KFPB(ahY(CtgxxfL)XUN@3TU
+
+◐ Luggage ◑ passgen 8 alpha
+pass: kw8iYbCV
+```
+
 ### More commands to manipulate secrets
 
 You can use the `help` command to get a list of all available commands within an opened Luggage.
@@ -243,10 +262,10 @@ Example:
 
 ```
 ◐ Luggage ◑ ecp /supersecret.txt ~/Desktop/dontlookatme.txt
-Exporting supersecret.txt into /home/miguelinux/Desktop/dontlookatme.txt...
+Exporting supersecret.txt into /home/user/Desktop/dontlookatme.txt...
 
 ◐ Luggage ◑ ecp / ~/tmp/all_luggage_files
-Exporting / into /home/miguelinux/tmp/all_luggage_files...
+Exporting / into /home/user/tmp/all_luggage_files...
 ```
 
 ### More commands to manipulate files within the opened Luggage
@@ -257,7 +276,9 @@ These include:
 - `rm <luggage_path>`: Remove the specified file or directory from the Luggage.
 - `mv <old_luggage_path> <new_luggage_path>`: Rename or move a file or directory within the Luggage.
 
-## Changing the Luggage passphrase
+## Managing and backing up Luggages
+
+### Change the passphrase of an open Luggage
 
 You can change the passphrase protecting an open Luggage using the `passwd` command from the Luggage prompt.
 This command will prompt you to enter a new passphrase, and then it will re-encrypt all data within the Luggage
@@ -271,6 +292,45 @@ You are about to change the luggage's passphrase. It is recommended you back up 
 New passphrase: 
 Repeat new passphrase: 
 Passphrase changed successfully.
+```
+
+### Export all secrets to an unencrypted CSV file
+
+You can export all secrets stored within an open Luggage to an unencrypted CSV file using the 
+`esecrets <output_csv_path>` command from the Luggage prompt. This command 
+will create a headerless CSV file at `<output_csv_path>` containing all secrets, 
+with two columns (secret name and content).
+
+You can later import this CSV file into the same or another Luggage using the `isecrets <input_csv_path>` command.
+
+Example:
+
+```
+◐ Luggage ◑ esecrets ~/tmp/secrets.csv
+
+◐ Luggage ◑ quit
+Bye
+
+$ cat ~/tmp/secrets.csv
+"example.org credentials","user: myuser
+pass: Ncgihyqa8BCwVchCP)eZGy)Byhd#ONH!"
+"github recovery tokens","1234-4567-7890
+5555-4444-6666"
+"my dark secret","I don't want anyone else to know about this..."
+```
+
+### Export all files from the Luggage to disk
+
+You can use the `ecp / <path>` command from the Luggage prompt to export all files and directories 
+stored within the opened Luggage to a specified destination path `<path>` on your local disk.
+
+You can then import them back into the same or another Luggage using the `icp <path> <luggage_dest_path>` command.
+
+Example:
+
+```
+◐ Luggage ◑ ecp / ~/tmp/full_file_backup
+Exporting / into /home/user/tmp/full_file_backup...
 ```
 
 ## Security model

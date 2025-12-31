@@ -25,6 +25,7 @@ class TestSecrets(unittest.TestCase):
             manual_key, manual_value = "test", "test\ncontents"
 
             expected_secrets = dict()
+            os.remove(tmp_file.name)
             with cryptoluggage.Luggage.create_new(path=tmp_file.name, passphrase=self.test_password) as l1:
                 assert len(l1.secrets) == 0
                 l1.secrets[manual_key] = manual_value

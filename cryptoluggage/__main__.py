@@ -378,6 +378,10 @@ def __main__():
         except cryptoluggage.BadPasswordOrCorruptedException:
             print(f"Cannot open {options.luggage_path}. Is the password OK?")
             sys.exit(-1)
+        except cryptoluggage.LuggageInUseError:
+            print(f"Luggage at {options.luggage_path!r} seems to be already open. "
+                  f"Close any other cryptoluggage instances using it and try again.")
+            sys.exit(-1)
     elif options.command == "create":
         passphrase = getpass.getpass("Passphrase: ")
         confirmed_passphrase = getpass.getpass("Confirm passphrase: ")

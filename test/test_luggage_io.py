@@ -28,10 +28,10 @@ class TestCreation(unittest.TestCase):
             tmp_id, tmp_path = tempfile.mkstemp()
 
             try:
+                os.remove(tmp_path)
                 l1 = Luggage.create_new(path=tmp_path, passphrase=password)
                 # Check bad password control
                 l1.close()
-                assert not os.path.exists(l1.lock_path)
 
                 if password_length > 0:
                     bad_password = password
@@ -43,12 +43,9 @@ class TestCreation(unittest.TestCase):
                     with Luggage(tmp_path, passphrase=bad_password) as l:
                         l.secrets
                         l.close()
-                    assert not os.path.exists(l.lock_path)
                     raise Exception(f"Luggage was opened with a bad password?? (equal={password == bad_password})")
                 except cryptoluggage.luggage.BadPasswordOrCorruptedException:
                     pass
-
-                assert not os.path.exists(l1.lock_path)
 
                 l2 = Luggage(tmp_path, passphrase=password)
                 l2.close()
@@ -62,8 +59,8 @@ class TestCreation(unittest.TestCase):
             tmp_id, tmp_path = tempfile.mkstemp()
 
             try:
-                l1 = Luggage.create_new(path=tmp_path,
-                                        passphrase=password)
+                os.remove(tmp_path)
+                l1 = Luggage.create_new(path=tmp_path, passphrase=password)
                 # Check concurrency control
                 try:
                     Luggage(tmp_path, passphrase=password)
@@ -71,6 +68,7 @@ class TestCreation(unittest.TestCase):
                                     f"(concurrency)")
                 except cryptoluggage.LuggageInUseError:
                     pass
+                _ = l1
             finally:
                 os.remove(tmp_path)
 

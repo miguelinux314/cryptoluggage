@@ -3,4 +3,4 @@
 
 from setuptools import setup
 
-setup()
+setup(install_requires=['sortedcontainers', 'portalocker'])

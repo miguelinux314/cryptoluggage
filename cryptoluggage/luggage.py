@@ -7,19 +7,18 @@ cryptoluggage for python 3
 __author__ = "Miguel Hernández Cabronero <miguel.hernandez@uab.cat>"
 __date__ = "08/02/2020"
 
+import base64
+import fnmatch
+import io
 import json
 import os
-import fnmatch
-import base64
-import sqlite3
 import pickle
+import portalocker
+import sortedcontainers
+import sqlite3
+import struct
 import sys
 import time
-import struct
-import filelock
-import sortedcontainers
-import string
-import io
 # Cryptography specific imports
 import cryptography.fernet
 from cryptography.exceptions import InvalidSignature
@@ -28,6 +27,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
+from portalocker.exceptions import AlreadyLocked
 
 from . import model
 
@@ -767,44 +767,27 @@ class Luggage:
           Luggages, but needed for Luggages created with cryptoluggage < 3.1.0).
         """
         self.path = path
-        try:
-            if not os.path.exists(self.path):
-                if legacy:
-                    print("Creating a new Luggage with the legacy format is not supported.")
-                    sys.exit(1)
-                self.create_new(path=self.path,
-                                passphrase=passphrase)
-            self.db_conn, self.master_fernet = self._open(passphrase=passphrase, legacy=legacy)
-            existed_before = os.path.exists(self.lock_path)
-            self.lock = filelock.FileLock(lock_file=self.lock_path)
-            self.lock.acquire(timeout=0.1)
-
-            # Force reading of DB to password check
-            _ = self.secrets
-
-            # If opened in legacy mode, immediately save to upgrade to the new format
+        if not os.path.exists(self.path):
             if legacy:
-                self._save_params(self.params, self.db_conn, db_cursor=None)
-                print("The Luggage has been updated to use the non-legacy format. "
-                      "You won't need to use the --legacy option again for this Luggage.")
-        except filelock.Timeout as ex:
-            if not existed_before:
-                try:
-                    os.remove(self.lock_path)
-                except FileExistsError:
-                    pass
+                print("Creating a new Luggage with the legacy format is not supported.")
+                sys.exit(1)
+            self.create_new(path=self.path, passphrase=passphrase)
 
-            raise LuggageInUseError(
-                f"The Luggage {self.path} seems to be already opened elsewhere.\n"
-                f"If you are sure this is not the case, remove {self.lock_path} "
-                "and try again") from ex
-        except Exception as ex:
-            if not existed_before:
-                try:
-                    os.remove(self.lock_path)
-                except FileExistsError:
-                    pass
+        self.db_conn, self.master_fernet = self._open(passphrase=passphrase, legacy=legacy)
+        
+        try:
+            # Ensure the secrets and the fs can be decrypted with the provided password 
+            _ = self.secrets
+            _ = self.encrypted_fs
+        except BadPasswordOrCorruptedException as ex:
+            self.close()
             raise ex
+
+        # If opened in legacy mode, immediately save to upgrade to the new format
+        if legacy:
+            self._save_params(self.params, self.db_conn, db_cursor=None)
+            print("The Luggage has been updated to use the non-legacy format. "
+                  "You won't need to use the --legacy option again for this Luggage.")
 
     @classmethod
     def create_new(cls, path, passphrase: str) -> "Luggage":
@@ -910,10 +893,6 @@ class Luggage:
             self._encrypted_fs = EncryptedFS(luggage=self)
             return self._encrypted_fs
 
-    @property
-    def lock_path(self):
-        return self.path + ".lock"
-
     def _open(self, passphrase: str, legacy: bool = False):
         """Open the database, read the parameters and store the master fernet.
         :param passphrase: master passphrasse for the luggage (utf8 string)
@@ -922,6 +901,13 @@ class Luggage:
         :return: (conn, fernet), where conn is the database connection and fernet
           is the master fernet to be used to decrypt the database.
         """
+        assert not hasattr(self, "lock")
+        self.lock = portalocker.Lock(filename=self.path, mode="r")
+        try:
+            self.lock.acquire(timeout=0.1)
+        except portalocker.AlreadyLocked as ex:
+            raise LuggageInUseError(
+                f"Luggage file {self.path} is already in use by another process.") from ex
         conn = sqlite3.connect(self.path)
         c = conn.cursor()
 
@@ -931,7 +917,8 @@ class Luggage:
             self.params = LuggageParams.loads(params_dumps, legacy=legacy)
             break
         else:
-            raise ValueError(f"Could not find parameter entry id {self.params_id}")
+            raise ValueError(f"Could not find parameter entry id {self.params_id}. "
+                             f"The luggage file may be corrupted.")
 
         # Make master fernet
         master_fernet = LuggageFernet(key=LuggageFernet.key_from_password(
@@ -956,16 +943,12 @@ class Luggage:
             db_conn.commit()
 
     def close(self):
+        if hasattr(self, "db_conn"):
+            self.db_conn and self.db_conn.close()
         self.db_conn, self.master_fernet = None, None
-        try:
-            os.remove(self.lock_path)
-        except FileNotFoundError as ex:
-            pass
-        try:
-            self.lock.release(force=True)
-        except AttributeError:
-            # lock might not have been defined, that's okp
-            pass
+        if hasattr(self, "lock"):
+            self.lock.release()
+            del self.lock
 
     def __enter__(self):
         return self

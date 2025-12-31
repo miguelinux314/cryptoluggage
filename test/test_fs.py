@@ -5,6 +5,7 @@
 
 import sys
 import os
+import time
 import unittest
 import random
 import string
@@ -25,6 +26,7 @@ class TestFS(unittest.TestCase):
         """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
+            os.remove(tmp_path)
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
                 for path in ("/a/b/c/d.txt", "/a/c/c/d.txt", "/a/d/c/d.txt"):
                     assert path not in l.encrypted_fs
@@ -46,6 +48,7 @@ class TestFS(unittest.TestCase):
         """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
+            os.remove(tmp_path)
             l = Luggage.create_new(path=tmp_path, passphrase=self.test_password)
             for path in ("/a/b/c/d.txt", "/a/c/c/d.txt", "/a/d/c/d.txt"):
                 with open(__file__, "rb") as f:
@@ -65,6 +68,7 @@ class TestFS(unittest.TestCase):
         """
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
+            os.remove(tmp_path)
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
                 l.encrypted_fs["/a/b/c.txt"] = __file__
 
@@ -121,61 +125,62 @@ class TestFS(unittest.TestCase):
     def test_delete(self):
         """Test deletion of files and directories
         """
-        tmp_id, tmp_path = tempfile.mkstemp()
-        try:
-            with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 3
-                l.encrypted_fs["/a/b/c.txt"] = __file__
-                assert len(l) == 4
+        random_name = "luggage_" + ''.join(random.choices(string.ascii_letters + string.digits, k=8)) + ".lug"
+        random_path = os.path.join(tempfile.gettempdir(), random_name)
+        if os.path.exists(random_path):
+            os.remove(random_path)
 
-            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 4, len(l)
-                del l.encrypted_fs["/a/b/c.txt"]
-                assert len(l) == 3
+        with Luggage.create_new(path=random_path, passphrase=self.test_password) as l:
+            assert len(l) == 3
+            l.encrypted_fs["/a/b/c.txt"] = __file__
+            assert len(l) == 4
 
-            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 3
+        with Luggage(path=random_path, passphrase=self.test_password) as l:
+            assert len(l) == 4, len(l)
+            del l.encrypted_fs["/a/b/c.txt"]
+            assert len(l) == 3
+
+        with Luggage(path=random_path, passphrase=self.test_password) as l:
+            assert len(l) == 3
+            try:
+                l.encrypted_fs["/a/b/c.txt"]
+                raise Exception("l.encrypted_fs['/a/b/c.txt'] should have raised exception. "
+                                f"{l.encrypted_fs['/a/b/c.txt']} instead")
+            except KeyError:
+                pass
+
+            with open(__file__, "rb") as f:
+                l.encrypted_fs["/a/x/y1/z1.txt"] = f
+            with open(__file__, "rb") as f:
+                l.encrypted_fs["/a/x/y1/z2.txt"] = f
+            with open(__file__, "rb") as f:
+                l.encrypted_fs["/a/x/y2/z1.txt"] = f
+            with open(__file__, "rb") as f:
+                l.encrypted_fs["/a/x/y2/z2.txt"] = f
+
+        with Luggage(path=random_path, passphrase=self.test_password) as l:
+            assert len(l) == 7
+            with open(__file__, "rb") as f:
+                read = l.encrypted_fs["/a/x/y2/z1.txt"]
+                expected = f.read()
+                assert read == expected
+            del l.encrypted_fs["/a/x/y1"]
+
+        with Luggage(path=random_path, passphrase=self.test_password) as l:
+            assert len(l) == 5
+            for p in ["/a/x/y1/z1.txt", "/a/x/y1/z2.txt", "/a/x/y1"]:
                 try:
-                    l.encrypted_fs["/a/b/c.txt"]
-                    raise Exception("l.encrypted_fs['/a/b/c.txt'] should have raised exception. "
-                                    f"{l.encrypted_fs['/a/b/c.txt']} instead")
+                    l.encrypted_fs[p]
+                    raise Exception(f"{p} should have raised an exception")
                 except KeyError:
                     pass
 
-                with open(__file__, "rb") as f:
-                    l.encrypted_fs["/a/x/y1/z1.txt"] = f
-                with open(__file__, "rb") as f:
-                    l.encrypted_fs["/a/x/y1/z2.txt"] = f
-                with open(__file__, "rb") as f:
-                    l.encrypted_fs["/a/x/y2/z1.txt"] = f
-                with open(__file__, "rb") as f:
-                    l.encrypted_fs["/a/x/y2/z2.txt"] = f
-
-            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 7
-                with open(__file__, "rb") as f:
-                    read = l.encrypted_fs["/a/x/y2/z1.txt"]
-                    expected = f.read()
-                    assert read == expected
-                del l.encrypted_fs["/a/x/y1"]
-
-            with Luggage(path=tmp_path, passphrase=self.test_password) as l:
-                assert len(l) == 5
-                for p in ["/a/x/y1/z1.txt", "/a/x/y1/z2.txt", "/a/x/y1"]:
-                    try:
-                        l.encrypted_fs[p]
-                        raise Exception(f"{p} should have raised an exception")
-                    except KeyError:
-                        pass
-
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-
     def test_path_formation(self):
+        paths = ["/a.txt", "a/b.txt", "a/c/d.txt"]
+        
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
-            paths = ["/a.txt", "a/b.txt", "a/c/d.txt"]
+            os.remove(tmp_path)
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
                 for p in paths:
                     l.encrypted_fs[p] = __file__
@@ -191,9 +196,11 @@ class TestFS(unittest.TestCase):
                 os.remove(tmp_path)
 
     def test_iteration(self):
+        paths = ["/a/a.txt", "a/b.txt", "a/c.txt", "a/d.txt", "a/e.txt"]
+        
         tmp_id, tmp_path = tempfile.mkstemp()
         try:
-            paths = ["/a/a.txt", "a/b.txt", "a/c.txt", "a/d.txt", "a/e.txt"]
+            os.remove(tmp_path)
             with Luggage.create_new(path=tmp_path, passphrase=self.test_password) as l:
                 for p in paths:
                     l.encrypted_fs[p] = __file__

@@ -1,5 +1,12 @@
 # Changelog for the cryptoluggage3 project
 
+## v3.1.3 - 2025/12/31
+
+- migrated from filelock to portalocker to avoid needing a sidecar .lock file
+- added extra integrity checks when opening a luggage
+- ensured luggage closure (and locking release) when a bad password is provided
+- fixed bug that prevented new secrets from being added (oops!)
+
 ## v3.1.2 - 2025/12/14
 
 ### New features

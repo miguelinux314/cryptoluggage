@@ -141,10 +141,15 @@ class Main(AutoFire):
         print(self.luggage.secrets[secret_name])
 
     @AutoFire.exported_function(["qr"])
-    def print_secret_qr(self, secret_key, prefix="pass:"):
+    def print_secret_qr(self, secret_key, prefix="pass:", *args):
         """Show the contents of a secret and display a QR for all '<prefix> <pass>' lines.
         By default, prefix is 'pass:'. Spaces between the prefix and the pass, and all spaces after the pass
         are automatically ignored."""
+        if args:
+            print("Error: Too many parameters for qr command. Note that the `qr` command does not accept spaces "
+                  "in secret names. Use quotes (\") or apostrophes (') if your secret name contains spaces.")
+            return
+        
         colon_warn_text = prompt_toolkit.formatted_text.FormattedText([
             ("bold", "Warning: "),
             ("", f"prefix usually contains a colon (:), but yours doesn't ({prefix!r}) "

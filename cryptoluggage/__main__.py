@@ -171,7 +171,7 @@ class Main(AutoFire):
         """
         try:
             secret_name = self.parse_secret_name_or_index(param=secret_key)
-        except KeyError:
+        except SecretNotFoundError as ex:
             secret_name = secret_key
         try:
             self.luggage.secrets[secret_name] = prompt_toolkit.prompt(

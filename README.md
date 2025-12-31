@@ -3,25 +3,275 @@
 Cryptoluggage allows you to store your secrets (for example, passwords)
 and private files encrypted inside a single, portable file.
 
-Cryptoluggage itself has been tested on Linux and, to a lesser extent, on Windows.
+Cryptoluggage itself has been tested on Linux and, to a lesser extent, on Windows and MacOS.
 
 ## Installation
 
 `pip install cryptoluggage`
 
-## Running
+## Creating and opening Luggages:
 
-After installation, you can run the `cl` command or `python -m cryptoluggage <arguments>`
+Luggages are created an opened from the CLI using the `create` and `open` commands of the `cl` tool.
+The `cl` tool is an alias for `python -m cryptoluggage`, so both commands are equivalent.
 
-## Usage:
+### Create and open a new Luggage at `<luggage_path>` from the CLI
 
-To create a new Luggage:
+`cl create <luggage_path>`
 
-`cl create luggage_path`
+Example:
 
-To open an existing Luggage:
+```
+cl create test.lug
+Passphrase: 
+Confirm passphrase: 
+◐ Luggage ◑
+```
 
-`cl open luggage_path`
+### Open an existing Luggage at `<luggage_path>` from the CLI
+
+`cl open <luggage_path>`
+
+Example:
+
+```
+cl open test.lug
+Passphrase: 
+◐ Luggage ◑ 
+```
+
+## Using secrets within an open Luggage
+
+Luggages can contain any number of secret texts, each identified by a unique name.
+These secrets are stored encrypted within the Luggage file, and may contain 
+passwords, recovery tokens, or any other sensitive information you wish to keep safe.
+
+Once a Luggage is opened with `cl open` (or `cl create`), you can use the following commands
+within the Luggage prompt to manage your secrets:
+
+### Create a new secret in an open Luggage
+
+Use `sset <secret_name>` to edit a secret with name `<secret_name>` (spaces allowed), or create it if it does not exist.
+Once in edit mode, type the contents of the secret. When done, press the Escape key followed by Enter to save the
+secret,
+or Ctrl+C to cancel the operation.
+
+Example:
+
+```
+◐ Luggage ◑ sset my dark secret
+Editing secret 'my dark secret'. ESC,Enter to save. Ctrl+C to cancel.
+ 
+I don't want anyone else to know about this...
+
+◐ Luggage ◑ sset github recovery tokens
+Editing secret 'github recovery tokens'. ESC,Enter to save. Ctrl+C to cancel.
+ 
+1234-4567-7890
+5555-4444-6666
+```
+
+### List all secrets within the opened Luggage
+
+Use `sls` to list all secrets stored in the opened Luggage.
+You may use `sls <filter>` to filter the list of secrets whose name contains `<filter>` (case insensitive).
+
+Note that the provided list includes their indices within brackets (e.g., `[0]`, `[1]`, etc.),
+which can be used by other commands (e.g., `sset`, `scat`, etc.) to refer to secrets by index instead of by name.
+
+Example:
+
+```
+◐ Luggage ◑ sls
+[0] github recovery tokens
+[1] my dark secret
+
+◐ Luggage ◑ sls dark
+[1] my dark secret
+
+◐ Luggage ◑ sls nonexistent
+No secrets found matching filter 'nonexistent'.
+```
+
+### Show the contents of a secret within the opened Luggage
+
+Use `scat <secret_name>` to show the contents of that secret. You must provide the full name of the secret,
+or alternative its index as shown by `sls`.
+
+Example:
+
+```
+◐ Luggage ◑ scat github recovery tokens
+1234-4567-7890
+5555-4444-6666
+
+◐ Luggage ◑ scat github
+Secret 'github' not found.
+
+◐ Luggage ◑ sls
+[0] github recovery tokens
+[1] my dark secret
+
+◐ Luggage ◑ scat 0
+Showing secret 'github recovery tokens':
+1234-4567-7890
+5555-4444-6666
+
+◐ Luggage ◑ scat 1
+Showing secret 'my dark secret':
+I don't want anyone else to know about this...
+```
+
+### Show the contents of a secret, and also display a qr code for passwords
+
+Sometimes, you may want to store a complicated password as a secret and then use it in your phone.
+To facilitate this, you can use the `qr <secret_name>` command to both show the contents of the secret 
+and display a QR code representing the password within. This way, you can easily scan the QR code with 
+your phone camera to retrieve the password without needing to type it manually.
+
+By default, the `qr` command shows the QR code for whatever appears after each `pass: ` line in the secret,
+although that can also be configured. 
+
+Note that for secrets containing spaces in their names, you will need to quote the name or use its index:
+
+Example:
+
+First create the secret and get its index:
+
+```
+◐ Luggage ◑ sset example.org credentials
+Editing secret 'example.org credentials'. ESC,Enter to save. Ctrl+C to cancel.
+ 
+user: myuser
+pass: Ncgihyqa8BCwVchCP)eZGy)Byhd#ONH!
+
+◐ Luggage ◑ sls example.org
+[0] example.org credentials
+```
+
+Then use the `qr` command to display the QR code (using a screenshot here to show the expected formatting):
+
+![QR screenshot](doc/qr_screenshot.png)
+
+### More commands to manipulate secrets
+
+You can use the `help` command to get a list of all available commands within an opened Luggage.
+These include:
+
+- `srm <secret_name>`: Remove the specified secret.
+- `smv <old_name> <new_name>`: Rename a secret from `<old_name>` to `<new_name>`.
+- `esecrets <output_csv_path>`: Export all secrets to an unencrypted CSV file at `<output_csv_path>`.
+- `isecrets <input_csv_path>`: Import secrets from an unencrypted CSV file at `<input_csv_path>`.
+
+## Using encrypted files within an open Luggage
+
+Luggages can also contain an encrypted file system structure, allowing you to store private files and directories
+within the Luggage. Each file is stored encrypted, and so is the structure of directories and file names.
+Once a Luggage is opened with `cl open` (or `cl create`), you can use the following commands
+within the Luggage prompt to manage your encrypted files:
+
+### Import existing files from disk into the opened Luggage
+
+Use `icp <source_path> <luggage_dest_path>` to import a file or directory from your local disk 
+into the opened Luggage. Here, `<source_path>` is the path on your local disk, and `<luggage_dest_path>` is the
+destination path within the Luggage where the file or directory will be stored.
+
+The original file or directory at `<source_path>` remains unchanged on your local disk after the import,
+while a new encrypted copy is created within the Luggage at `<luggage_dest_path>`.
+
+The syntax and semantics of `icp` are similar to the Unix `cp` command, considering that `<luggage_dest_path>`
+refers to a path within the Luggage's encrypted file system (the root being `/`).
+
+Example, to import a file `~/tmp/my_secret_file.txt` from your local disk into a new file `/supersecret.txt` 
+within the opened Luggage, you can do:
+
+```
+◐ Luggage ◑ icp ~/tmp/my_secret_file.txt /supersecret.txt
+```
+
+You can import any file type (even complete directories) using `icp`, and you can specify the destination path
+within the Luggage as needed:
+
+```
+◐ Luggage ◑ icp ~/tmp/another_secret.png /img/necronomicon.png
+
+◐ Luggage ◑ icp ~/tmp/confidential_dir /topsecret/confidential
+```
+
+### List files and directories within the opened Luggage
+
+Use `ls` or `tree` to list the files and directories stored within the opened Luggage.
+
+You can also use `ls <filter>` or `tree <filter>` to filter the list of files and directories 
+whose name contains `<filter>` (case insensitive). 
+
+Example:
+
+```
+◐ Luggage ◑ ls
+[test.lug]
+/topsecret/
+/topsecret/confidential/
+/topsecret/confidential/confidential_dir/
+/topsecret/confidential/confidential_dir/c.zip
+/topsecret/confidential/confidential_dir/b.doc
+/topsecret/confidential/confidential_dir/a.txt
+/supersecret.txt
+/img/
+/img/necronomicon.png
+
+◐ Luggage ◑ ls conf
+[test.lug]
+/topsecret/confidential/
+/topsecret/confidential/confidential_dir/
+/topsecret/confidential/confidential_dir/c.zip
+/topsecret/confidential/confidential_dir/b.doc
+/topsecret/confidential/confidential_dir/a.txt
+
+◐ Luggage ◑ tree png
+[test.lug]
+ +-[img/]
+    +---necronomicon.png 
+```
+
+### Extract files from the opened Luggage to disk
+
+Use `ecp <luggage_source_path> <dest_path>` to extract a file or directory from the opened Luggage.
+The Luggage remains unmodified, and a decrypted copy of the specified file or directory is created at `<dest_path>` 
+on your local disk.
+
+Example:
+
+```
+◐ Luggage ◑ ecp /supersecret.txt ~/Desktop/dontlookatme.txt
+Exporting supersecret.txt into /home/miguelinux/Desktop/dontlookatme.txt...
+
+◐ Luggage ◑ ecp / ~/tmp/all_luggage_files
+Exporting / into /home/miguelinux/tmp/all_luggage_files...
+```
+
+### More commands to manipulate files within the opened Luggage
+
+You can use the `help` command to get a list of all available commands within an opened Luggage.
+These include:
+
+- `rm <luggage_path>`: Remove the specified file or directory from the Luggage.
+- `mv <old_luggage_path> <new_luggage_path>`: Rename or move a file or directory within the Luggage.
+
+## Changing the Luggage passphrase
+
+You can change the passphrase protecting an open Luggage using the `passwd` command from the Luggage prompt.
+This command will prompt you to enter a new passphrase, and then it will re-encrypt all data within the Luggage
+(you will need the previous passphrase to open the Luggage, but not to change it).
+
+Example:
+
+```
+◐ Luggage ◑ passwd
+You are about to change the luggage's passphrase. It is recommended you back up your original luggage first (this tool will not do it for you).
+New passphrase: 
+Repeat new passphrase: 
+Passphrase changed successfully.
+```
 
 ## Security model
 

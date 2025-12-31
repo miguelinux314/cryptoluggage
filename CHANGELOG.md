@@ -1,5 +1,11 @@
 # Changelog for the cryptoluggage3 project
 
+## v3.1.4 - Current development version
+
+- Added comprehensive documentation into the README.md file.
+- The `ls` and `tree` commands now filter based on the full path, not just the filename.
+- The `qr` command is now aware of invalid usage (too many parameters).
+
 ## v3.1.3 - 2025/12/31
 
 - migrated from filelock to portalocker to avoid needing a sidecar .lock file

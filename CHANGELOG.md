@@ -1,6 +1,6 @@
 # Changelog for the cryptoluggage3 project
 
-## v3.1.4 - Current development version
+## v3.1.4 - 2025/12/31
 
 - Added comprehensive documentation into the README.md file.
 - Added the `passgen` command to generate strong passwords.

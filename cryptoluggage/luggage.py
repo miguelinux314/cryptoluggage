@@ -14,6 +14,7 @@ import json
 import os
 import pickle
 import portalocker
+import secrets
 import sortedcontainers
 import sqlite3
 import struct
@@ -82,7 +83,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         """Encrypt data and return bytes, without converting to Base64.
         """
         current_time = time.time() if not erase_time else 0
-        iv = os.urandom(16)
+        iv = secrets.token_bytes(16)
         return self._encrypt_from_parts_no_base64(data, current_time, iv)
 
     def decrypt_binary(self, token):
@@ -133,7 +134,7 @@ class LuggageFernet(cryptography.fernet.Fernet):
         return base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
 
     def _encrypt_from_parts_no_base64(self, data, current_time, iv):
-        """Copy-and-paste from from fernet.Fernet, save for the return
+        """Copy-and-paste from fernet.Fernet, save for the return
         """
         if not isinstance(data, bytes):
             raise TypeError("data must be bytes.")

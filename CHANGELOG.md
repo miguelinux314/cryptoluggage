@@ -1,5 +1,9 @@
 # Changelog for the cryptoluggage3 project
 
+## v3.1.5 - Under development
+
+- Moved from os.urandom to secrets.token_bytes for generating random data.
+
 ## v3.1.4 - 2025/12/31
 
 - Added comprehensive documentation into the README.md file.

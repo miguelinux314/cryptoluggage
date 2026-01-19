@@ -335,12 +335,25 @@ Exporting / into /home/user/tmp/full_file_backup...
 
 ## Security model
 
-Cryptoluggage uses strong encryption (AES-256 in CBC mode) to protect your data.
-The encryption key is derived from your passphrase using PBKDF2 with a high iteration count (1 million by default)
+Cryptoluggage uses strong encryption based on AES-256-CBC 
+and the well-tested [cryptography](https://cryptography.io/) library to protect your data:
+
+- The encryption key is derived from your passphrase using PBKDF2 with a high iteration count (1 million by default)
 and a random salt (24 bytes by default). This makes brute-force attacks computationally expensive, and very difficult
-for sufficiently strong passphrases.
-Random IVs are used for each encryption operation to ensure that identical plaintexts
-produce different ciphertexts, further enhancing security.
+for sufficiently strong passphrases. 
+
+- An integrity key is also derived from the passphrase, and used to "sign" all encrypted data.
+This allows detection of any tampering with the encrypted data before decryption is attempted.
+This is done with Python's cryptography [Fernet](https://cryptography.io/en/latest/fernet/).
+
+- Random IVs are used for each encryption operation to ensure that identical plaintexts
+produce different ciphertexts. Even though extremely unlikely, IV reuse is not as severe an issue 
+as other AEAD encryption schemes (e.g., AES-GCM or ChaCha20-Poly1305):
+disclosing only XOR relations of the first block of plaintexts.
+
+**Note**: cryptography's Fernet is preferred over AEAD primitives to prevent accidental misuse,
+as recommended by the library's documentation. In general, cryptoluggage avoids re-implementing 
+cryptographic schemes, and instead relies on well-tested libraries.
 
 ### Luggage structure
 
